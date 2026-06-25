@@ -439,6 +439,11 @@ def run_playwright_login():
                                                 "X-Requested-With": "XMLHttpRequest"
                                             };
                                                 
+                                            // 1. 发送 GET 请求以切换/激活通选轮次的 session 状态，确保后端的 token 和轮次码正常
+                                            const curriculaUrl = `/xsxkapp/sys/xsxkapp/*default/curriculavariable.do?token=${token}`;
+                                            fetch(curriculaUrl, { headers })
+                                                .then(r => r.text()).catch(e => console.error(e));
+                                                
                                             // 构建 POST 请求辅助函数，控制 pageSize 避免后端卡死
                                             const fetchCoursePost = (url, teachingClassType) => {
                                                 const payload = {
