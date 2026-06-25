@@ -429,7 +429,7 @@ def run_playwright_login():
                                         
                                         const clickNode = (text) => {
                                             const els = Array.from(document.querySelectorAll('li, div, span, a, button'));
-                                            const target = els.find(el => el.textContent && el.textContent.trim() === text && el.children.length === 0);
+                                            const target = els.find(el => el.textContent && el.textContent.includes(text) && el.children.length === 0);
                                             if (target) {
                                                 target.click();
                                                 return true;
@@ -449,6 +449,7 @@ def run_playwright_login():
                                             '通识必修'
                                         ];
                                         let currentTabIndex = 0;
+                                        let retries = 0;
                                         
                                         const interval = setInterval(() => {
                                             if (currentTabIndex >= tabsToClick.length) {
@@ -457,14 +458,20 @@ def run_playwright_login():
                                             }
                                             
                                             // 尝试点击当前的 tab
-                                            clickNode(tabsToClick[currentTabIndex]);
+                                            let success = clickNode(tabsToClick[currentTabIndex]);
                                             
-                                            // 无论点击是否成功（有的界面可能没这个tab），都直接进入下一个，避免死等
-                                            currentTabIndex++;
+                                            if (success || retries >= 3) {
+                                                // 成功点击，或者重试了 3 次（4.5秒）还是找不到，就跳到下一个
+                                                currentTabIndex++;
+                                                retries = 0;
+                                            } else {
+                                                // 找不到，继续重试当前 tab（可能是还没渲染出来）
+                                                retries++;
+                                            }
                                         }, 1500);
                                         
-                                        // 最多尝试 20 秒后放弃
-                                        setTimeout(() => clearInterval(interval), 20000);
+                                        // 最多尝试 30 秒后放弃
+                                        setTimeout(() => clearInterval(interval), 30000);
                                     }
                                 """)
                                 STATE["auto_clicked_tabs"] = True

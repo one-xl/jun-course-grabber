@@ -131,28 +131,6 @@
       "type": "基础选修课"
     },
     {
-      "credit": "2",
-      "electiveBatchCode": "fef5960ba85e4e96a66c295e5a3fd217",
-      "id": "2627106265",
-      "name": "观赏植物学",
-      "teacher": "韦桂峰,胡韧",
-      "teachingClassType": "QXKC",
-      "time": "1-18周 星期四 第6节-第7节 番禺教学大楼411室",
-      "type": "全校选修",
-      "uiTab": "XGXK"
-    },
-    {
-      "credit": "2",
-      "electiveBatchCode": "fef5960ba85e4e96a66c295e5a3fd217",
-      "id": "2627106421",
-      "name": "人工智能导论",
-      "teacher": "龙锦益,张佳,张哲",
-      "teachingClassType": "QXKC",
-      "time": "1-18周 星期五 第3节-第4节 番禺教学大楼402室",
-      "type": "全校选修",
-      "uiTab": "XGXK"
-    },
-    {
       "canSelect": "1",
       "credit": "1",
       "electiveBatchCode": "0b215876e50f4bd192016ad490e5ed4c",
@@ -193,5 +171,5 @@
     "2627103979",
     "2627103987"
   ],
-  "timestamp": 1782371339992
+  "timestamp": 1782371762136
 }
