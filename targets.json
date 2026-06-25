@@ -161,7 +161,8 @@
       "teachingClassType": "QXKC",
       "time": "1-18周 星期二 第7节-第8节 N篮球3",
       "type": "专业全校课",
-      "uiTab": "FANKC"
+      "uiTab": "FANKC",
+      "canSelect": "1"
     },
     {
       "credit": "2",
@@ -173,16 +174,36 @@
       "time": "1-18周 星期三 第3节-第4节 番禺教学大楼402室",
       "type": "通选全校课",
       "uiTab": "XGXK"
+    },
+    {
+      "conflictDesc": "None",
+      "credit": "2",
+      "id": "2627106346",
+      "isConflict": "None",
+      "name": "慢性病预防与调理",
+      "selected": false,
+      "teacher": "王畯霖,聂红,邓丽娟",
+      "teachingClassType": "FANKC",
+      "time": "3-14周 星期二 第10节-第12节 番禺教学大楼409室",
+      "type": "通识教育选修课"
+    },
+    {
+      "id": "2627101686",
+      "name": "体育Ⅱ",
+      "type": "专业全校课",
+      "teachingClassType": "QXKC",
+      "uiTab": "FANKC",
+      "electiveBatchCode": "0b215876e50f4bd192016ad490e5ed4c",
+      "credit": "1",
+      "time": "1-18周 星期三 第1节-第2节 N篮球6",
+      "teacher": "王平远"
     }
   ],
   "selectedCourseIds": [
     "2627103977",
     "2627103979",
-    "2627104009",
-    "2627106265",
-    "2627106421",
     "2627103987",
-    "2627106399"
+    "2627101686"
   ],
-  "timestamp": 1782365069070
+  "timestamp": 1782369918737
 }

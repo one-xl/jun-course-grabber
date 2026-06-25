@@ -761,10 +761,17 @@
                 
                 const canSelect = c.canSelect || "";
                 
+                let btnHtml = "";
+                if (canSelect === "1") {
+                    btnHtml = `<button class="btn" style="padding: 4px 10px; font-size: 0.75rem; border-color: var(--success); color: var(--success);" onclick="addPublicCourseToTargets('${cId}', '${cName}', '${cCredit}', '${safeTime}', '${safeTeacher}', '${searchRound}', '${batchCode}', '${canSelect}')">加入目标</button>`;
+                } else {
+                    btnHtml = `<button class="btn" style="padding: 4px 10px; font-size: 0.75rem; border-color: #666; color: #666; cursor: not-allowed; opacity: 0.6;" disabled title="此课程当前不可选（可能由于校区限制、学分限制或排斥要求等）">不可选</button>`;
+                }
+                
                 const tr = document.createElement("tr");
                 tr.innerHTML = `
                     <td>
-                        <button class="btn" style="padding: 4px 10px; font-size: 0.75rem; border-color: var(--success); color: var(--success);" onclick="addPublicCourseToTargets('${cId}', '${cName}', '${cCredit}', '${safeTime}', '${safeTeacher}', '${searchRound}', '${batchCode}', '${canSelect}')">加入目标</button>
+                        ${btnHtml}
                     </td>
                     <td style="font-family: monospace;">${cId}</td>
                     <td>${cNameHtml}</td>
