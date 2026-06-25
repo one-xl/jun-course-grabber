@@ -451,6 +451,81 @@ def run_playwright_login():
     except Exception as e:
         push_log(f"Playwright 错误: {str(e)}", "error")
 
+def send_elect_request_async_batch(ready_targets):
+    js_code_lines = []
+    js_code_lines.append("() => {")
+    js_code_lines.append("    if (!window._asyncResponses) window._asyncResponses = [];")
+    js_code_lines.append(f"    const concurrency = {STATE.get('concurrency', 1)};")
+    js_code_lines.append("    const jnuToken = window._jnuToken || new URLSearchParams(window.location.search).get('token') || '';")
+    
+    for (target, att) in ready_targets:
+        t_type = target.get("teachingClassType", "FANKC")
+        batch_code = target.get("electiveBatchCode") or STATE["electiveBatchCode"]
+        
+        inner_data = {
+            "operationType": "1",
+            "studentCode": STATE["studentCode"],
+            "electiveBatchCode": batch_code,
+            "teachingClassId": target["id"],
+            "isMajor": STATE["isMajor"],
+            "campus": target.get("campus", STATE.get("campus", "2")),
+            "teachingClassType": t_type,
+        }
+        
+        if t_type == "XGXK" or t_type == "QXKC":
+            inner_data["chooseVolunteer"] = "1"
+            
+        outer_data = {"data": inner_data}
+        json_str = json.dumps(outer_data, ensure_ascii=False)
+        encoded_data = urllib.parse.quote(json_str)
+        payload = f"addParam={encoded_data}"
+        
+        js_code_lines.append(f"    // Target {target['name']}")
+        js_code_lines.append("    for (let i = 0; i < Math.max(1, concurrency); i++) {")
+        js_code_lines.append("        const ctrl = new AbortController();")
+        js_code_lines.append("        const tid = setTimeout(() => ctrl.abort(), 8000);")
+        js_code_lines.append(f"        fetch('{VOLUNTEER_URL}', {{")
+        js_code_lines.append("            method: 'POST',")
+        js_code_lines.append("            headers: {")
+        js_code_lines.append("                'Content-Type': 'application/x-www-form-urlencoded; charset=UTF-8',")
+        js_code_lines.append("                'X-Requested-With': 'XMLHttpRequest',")
+        js_code_lines.append("                'token': jnuToken")
+        js_code_lines.append("            },")
+        js_code_lines.append(f"            body: '{payload}',")
+        js_code_lines.append("            signal: ctrl.signal,")
+        js_code_lines.append("            __isGrabber: true")
+        js_code_lines.append("        }).then(r => {")
+        js_code_lines.append("            clearTimeout(tid);")
+        js_code_lines.append("            return r.text().then(body => {")
+        js_code_lines.append("                window._asyncResponses.push({")
+        js_code_lines.append(f"                    'id': '{target['id']}',")
+        js_code_lines.append(f"                    'name': '{target['name']}',")
+        js_code_lines.append(f"                    'att': {att},")
+        js_code_lines.append("                    'status': r.status,")
+        js_code_lines.append("                    'body': body")
+        js_code_lines.append("                });")
+        js_code_lines.append("            });")
+        js_code_lines.append("        }).catch(e => {")
+        js_code_lines.append("            window._asyncResponses.push({")
+        js_code_lines.append(f"                'id': '{target['id']}',")
+        js_code_lines.append(f"                'name': '{target['name']}',")
+        js_code_lines.append(f"                'att': {att},")
+        js_code_lines.append("                'status': 0,")
+        js_code_lines.append("                'body': 'ERROR:' + e.message")
+        js_code_lines.append("            });")
+        js_code_lines.append("        });")
+        js_code_lines.append("    }")
+        
+    js_code_lines.append("    return 'BATCH_DISPATCHED';")
+    js_code_lines.append("}")
+    
+    js_code = "\n".join(js_code_lines)
+    STATE["cmd_queue"].put(js_code)
+    try:
+        STATE["resp_queue"].get(timeout=2)
+    except queue.Empty:
+        pass
+
 def send_elect_request_async(target, att):
     t_type = target.get("teachingClassType", "FANKC")
         
@@ -701,7 +776,8 @@ def _grabbing_loop_impl(targets, interval, schedule_time=0):
         if all(results[t["id"]] for t in targets):
             continue
 
-        # 发送请求逻辑
+        # 收集就绪目标进行真并发批处理发包
+        ready_targets = []
         for t in targets:
             if STATE["stop_event"].is_set(): break
             if results[t["id"]]: continue
@@ -721,18 +797,20 @@ def _grabbing_loop_impl(targets, interval, schedule_time=0):
             # [限制]: 验证“选择”按钮是否亮起 (canSelect == "1")
             exist_c = next((x for x in STATE["captured_courses"] if x["id"] == t["id"]), None)
             current_can_select = exist_c.get("canSelect", "") if exist_c else str(t.get("canSelect", ""))
-            # 如果字段存在且明确不为 "1"（如 "0" 或其他暗状态），则静默挂机等待
             if current_can_select and current_can_select != "1":
                 continue
             
             attempts[t["id"]] += 1
             att = attempts[t["id"]]
             
-            push_log(f"▶ [{t['name']}] 发送第 {att} 次并发请求...", "info")
+            push_log(f"▶ [{t['name']}] 压入第 {att} 次全量并发队列...", "info")
                 
             pending_reqs[t["id"]] = True
             last_fire_time[t["id"]] = time.time()
-            send_elect_request_async(t, att)
+            ready_targets.append((t, att))
+
+        if ready_targets:
+            send_elect_request_async_batch(ready_targets)
 
         # 【处理上几轮积累的异步返回响应】
         while not STATE["stop_event"].is_set():
