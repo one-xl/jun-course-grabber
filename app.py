@@ -418,7 +418,7 @@ def run_playwright_login():
                 if "auto_clicked_tabs" not in STATE:
                     STATE["auto_clicked_tabs"] = False
 
-                if STATE["token"] and STATE["studentCode"] and STATE.get("campus") and STATE.get("electiveBatchCode") and not STATE["auto_clicked_tabs"]:
+                if STATE["token"] and STATE["studentCode"] and not STATE["auto_clicked_tabs"]:
                     if len(STATE["captured_courses"]) == 0:
                         if "playwright_page" in STATE:
                             try:
@@ -426,55 +426,6 @@ def run_playwright_login():
                                     () => {
                                         if (window._autoClickerStarted) return;
                                         window._autoClickerStarted = true;
-                                        
-                                        // 核心突破：直接发送获取跨轮次/通选课、方案内、推荐班的所有底层数据请求
-                                        const token = "__TOKEN__";
-                                        const studentCode = "__STUDENT_CODE__";
-                                        const campus = "__CAMPUS__";
-                                        const batchCode = "__BATCH__";
-                                        
-                                        if (token && studentCode && campus && batchCode) {
-                                            const headers = {
-                                                "Content-Type": "application/x-www-form-urlencoded; charset=UTF-8",
-                                                "X-Requested-With": "XMLHttpRequest"
-                                            };
-                                                
-                                            // 1. 发送 GET 请求以切换/激活通选轮次的 session 状态，确保后端的 token 和轮次码正常
-                                            const curriculaUrl = `/xsxkapp/sys/xsxkapp/*default/curriculavariable.do?token=${token}`;
-                                            fetch(curriculaUrl, { headers })
-                                                .then(r => r.text()).catch(e => console.error(e));
-                                                
-                                            // 构建 POST 请求辅助函数，控制 pageSize 避免后端卡死
-                                            const fetchCoursePost = (url, teachingClassType) => {
-                                                const payload = {
-                                                    "data": {
-                                                        "studentCode": studentCode,
-                                                        "campus": campus,
-                                                        "electiveBatchCode": batchCode,
-                                                        "isMajor": "1",
-                                                        "teachingClassType": teachingClassType,
-                                                        "checkConflict": "2",
-                                                        "checkCapacity": "2",
-                                                        "queryContent": ""
-                                                    },
-                                                    "pageSize": "20",
-                                                    "pageNumber": "0",
-                                                    "order": ""
-                                                };
-                                                const bodyData = "querySetting=" + encodeURIComponent(JSON.stringify(payload));
-                                                fetch(url, {
-                                                    method: 'POST',
-                                                    headers: headers,
-                                                    body: bodyData
-                                                }).then(r => r.text()).catch(e => console.error(e));
-                                            };
-                                            
-                                            // 1. 方案内课程 (POST)
-                                            fetchCoursePost(`/xsxkapp/sys/xsxkapp/elective/programCourse.do`, "FANKC");
-                                            
-                                            // 2. 推荐班课程 (POST)
-                                            fetchCoursePost(`/xsxkapp/sys/xsxkapp/elective/recommendedCourse.do`, "TJKC");
-                                        }
                                         
                                         const clickNode = (text) => {
                                             const els = Array.from(document.querySelectorAll('li, div, span, a, button'));
@@ -486,11 +437,11 @@ def run_playwright_login():
                                             return false;
                                         };
                                         
-                                        // 作为补充兜底：依然穷举尝试点击可能的课程分类 Tab
+                                        // 核心：依次模拟点击关键的三个按钮，强制前端发出请求，从而让后端拦截并提取轮次码(batch_PRO, batch_XGXK)
                                         const tabsToClick = [
-                                            '方案内课程', '推荐班课程', '全校课程', 
-                                            '通识选修', '公共选修', '跨专业课程', 
-                                            '方案外课程', '通识必修'
+                                            '切换轮次', '方案内课程', '推荐班课程', 
+                                            '全校课程', '通识选修', '公共选修', 
+                                            '跨专业课程', '方案外课程', '通识必修'
                                         ];
                                         let currentTabIndex = 0;
                                         let retries = 0;
@@ -512,14 +463,9 @@ def run_playwright_login():
                                         setTimeout(() => clearInterval(interval), 30000);
                                     }
                                 """
-                                final_script = js_script.replace("__TOKEN__", STATE["token"]) \
-                                                        .replace("__STUDENT_CODE__", STATE["studentCode"]) \
-                                                        .replace("__CAMPUS__", STATE.get("campus", "2")) \
-                                                        .replace("__BATCH__", STATE.get("electiveBatchCode", ""))
-                                                        
-                                STATE["playwright_page"].evaluate(final_script)
+                                STATE["playwright_page"].evaluate(js_script)
                                 STATE["auto_clicked_tabs"] = True
-                                push_log("🤖 自动为您模拟点击了【方案内课程】与【推荐班课程】以获取数据", "info")
+                                push_log("🤖 自动为您模拟点击【切换轮次】、【方案内课程】等按钮，以获取关键轮次码", "info")
                             except Exception:
                                 pass
 
