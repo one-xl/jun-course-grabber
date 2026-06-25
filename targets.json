@@ -186,24 +186,12 @@
       "teachingClassType": "FANKC",
       "time": "3-14周 星期二 第10节-第12节 番禺教学大楼409室",
       "type": "通识教育选修课"
-    },
-    {
-      "id": "2627101686",
-      "name": "体育Ⅱ",
-      "type": "专业全校课",
-      "teachingClassType": "QXKC",
-      "uiTab": "FANKC",
-      "electiveBatchCode": "0b215876e50f4bd192016ad490e5ed4c",
-      "credit": "1",
-      "time": "1-18周 星期三 第1节-第2节 N篮球6",
-      "teacher": "王平远"
     }
   ],
   "selectedCourseIds": [
     "2627103977",
     "2627103979",
-    "2627103987",
-    "2627101686"
+    "2627103987"
   ],
-  "timestamp": 1782369918737
+  "timestamp": 1782370038678
 }

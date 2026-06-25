@@ -1290,7 +1290,7 @@
                                 allCourses.push({
                                     id: cid,
                                     name: nc.courseName || nc.departmentName || "未知课程",
-                                    type: nc.courseNatureName || nc.typeName || (courseType === "FANKC" ? "方案内" : "推荐"),
+                                    type: nc.courseTypeName || nc.courseNatureName || nc.typeName || (courseType === "FANKC" ? "方案内" : "推荐"),
                                     teachingClassType: courseType,
                                     credit: nc.courseCredit || nc.credit || "",
                                     time: tc.teachingPlace || tc.classTime || nc.classTime || "未知",
@@ -1453,10 +1453,14 @@
                 if (c.uiTab) {
                     return currentCourseTab === c.uiTab;
                 }
+                
+                const isGeneral = c.teachingClassType === 'XGXK' || c.teachingClassType === 'QXKC' || 
+                    (c.type && (c.type.includes('通识') || c.type.includes('通选') || c.type.includes('全校')));
+                
                 if (currentCourseTab === 'XGXK') {
-                    return c.teachingClassType === 'XGXK' || c.teachingClassType === 'QXKC';
+                    return isGeneral;
                 } else {
-                    return c.teachingClassType !== 'XGXK' && c.teachingClassType !== 'QXKC';
+                    return !isGeneral;
                 }
             });
 
