@@ -422,10 +422,21 @@ def run_playwright_login():
                     if len(STATE["captured_courses"]) == 0:
                         if "playwright_page" in STATE:
                             try:
-                                STATE["playwright_page"].evaluate("""
+                                js_script = """
                                     () => {
                                         if (window._autoClickerStarted) return;
                                         window._autoClickerStarted = true;
+                                        
+                                        // 核心突破：直接发送获取跨轮次/通选课底层数据的请求
+                                        const token = "__TOKEN__";
+                                        if (token) {
+                                            const curriculaUrl = `/xsxkapp/sys/xsxkapp/*default/curriculavariable.do?token=${token}`;
+                                            fetch(curriculaUrl, {
+                                                headers: { "X-Requested-With": "XMLHttpRequest" }
+                                            })
+                                            .then(r => r.text())
+                                            .catch(e => console.error(e));
+                                        }
                                         
                                         const clickNode = (text) => {
                                             const els = Array.from(document.querySelectorAll('li, div, span, a, button'));
@@ -473,7 +484,8 @@ def run_playwright_login():
                                         // 最多尝试 30 秒后放弃
                                         setTimeout(() => clearInterval(interval), 30000);
                                     }
-                                """)
+                                """
+                                STATE["playwright_page"].evaluate(js_script.replace("__TOKEN__", STATE["token"]))
                                 STATE["auto_clicked_tabs"] = True
                                 push_log("🤖 自动为您模拟点击了【方案内课程】与【推荐班课程】以获取数据", "info")
                             except Exception:
