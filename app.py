@@ -414,6 +414,58 @@ def run_playwright_login():
                 if not STATE["electiveBatchCode"]: missing.append("选课批次码(electiveBatchCode)")
                 if len(STATE["captured_courses"]) == 0: missing.append("课程列表(请点击选课分类)")
 
+                # 自动模拟点击方案内与推荐班（仅在 Token 获取后且未曾点击时触发）
+                if "auto_clicked_tabs" not in STATE:
+                    STATE["auto_clicked_tabs"] = False
+
+                if STATE["token"] and STATE["studentCode"] and not STATE["auto_clicked_tabs"]:
+                    if len(STATE["captured_courses"]) == 0:
+                        if "playwright_page" in STATE:
+                            try:
+                                STATE["playwright_page"].evaluate("""
+                                    () => {
+                                        if (window._autoClickerStarted) return;
+                                        window._autoClickerStarted = true;
+                                        let clickedFanAn = false;
+                                        let clickedTuiJian = false;
+                                        
+                                        const clickNode = (text) => {
+                                            const els = Array.from(document.querySelectorAll('li, div, span, a, button'));
+                                            const target = els.find(el => el.textContent && el.textContent.trim().includes(text) && el.children.length === 0);
+                                            if (target) {
+                                                target.click();
+                                                return true;
+                                            }
+                                            return false;
+                                        };
+                                        
+                                        const interval = setInterval(() => {
+                                            if (!clickedFanAn && clickNode('方案内课程')) {
+                                                clickedFanAn = true;
+                                                setTimeout(() => {
+                                                    if (clickNode('推荐班课程')) {
+                                                        clickedTuiJian = true;
+                                                        clearInterval(interval);
+                                                    } else {
+                                                        // 如果1.5秒后找不到推荐班，恢复定时器继续找
+                                                        clickedTuiJian = false;
+                                                    }
+                                                }, 1500);
+                                            }
+                                            if (clickedFanAn && clickedTuiJian) {
+                                                clearInterval(interval);
+                                            }
+                                        }, 1000);
+                                        
+                                        // 最多尝试 15 秒后放弃
+                                        setTimeout(() => clearInterval(interval), 15000);
+                                    }
+                                """)
+                                STATE["auto_clicked_tabs"] = True
+                                push_log("🤖 自动为您模拟点击了【方案内课程】与【推荐班课程】以获取数据", "info")
+                            except Exception:
+                                pass
+
                 check_counter += 1
                 if len(missing) > 0 and check_counter % 5 == 0:
                     push_log(f"⏳ 仍在等待提取: {', '.join(missing)}", "warn")
