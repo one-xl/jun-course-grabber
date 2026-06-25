@@ -418,7 +418,7 @@ def run_playwright_login():
                 if "auto_clicked_tabs" not in STATE:
                     STATE["auto_clicked_tabs"] = False
 
-                if STATE["token"] and STATE["studentCode"] and not STATE["auto_clicked_tabs"]:
+                if STATE["token"] and STATE["studentCode"] and STATE.get("campus") and STATE.get("electiveBatchCode") and not STATE["auto_clicked_tabs"]:
                     if len(STATE["captured_courses"]) == 0:
                         if "playwright_page" in STATE:
                             try:
@@ -427,15 +427,54 @@ def run_playwright_login():
                                         if (window._autoClickerStarted) return;
                                         window._autoClickerStarted = true;
                                         
-                                        // 核心突破：直接发送获取跨轮次/通选课底层数据的请求
+                                        // 核心突破：直接发送获取跨轮次/通选课、方案内、推荐班的所有底层数据请求
                                         const token = "__TOKEN__";
-                                        if (token) {
+                                        const studentCode = "__STUDENT_CODE__";
+                                        const campus = "__CAMPUS__";
+                                        const batchCode = "__BATCH__";
+                                        
+                                        if (token && studentCode && campus && batchCode) {
+                                            const headers = {
+                                                "Content-Type": "application/x-www-form-urlencoded; charset=UTF-8",
+                                                "X-Requested-With": "XMLHttpRequest"
+                                            };
+                                            
+                                            // 1. 通识课 / 跨轮次课程 (GET)
                                             const curriculaUrl = `/xsxkapp/sys/xsxkapp/*default/curriculavariable.do?token=${token}`;
-                                            fetch(curriculaUrl, {
-                                                headers: { "X-Requested-With": "XMLHttpRequest" }
-                                            })
-                                            .then(r => r.text())
-                                            .catch(e => console.error(e));
+                                            fetch(curriculaUrl, { headers })
+                                                .then(r => r.text())
+                                                .catch(e => console.error(e));
+                                                
+                                            // 构建 POST 请求辅助函数，直接把 pageSize 调到 300 拿全量
+                                            const fetchCoursePost = (url, teachingClassType) => {
+                                                const payload = {
+                                                    "data": {
+                                                        "studentCode": studentCode,
+                                                        "campus": campus,
+                                                        "electiveBatchCode": batchCode,
+                                                        "isMajor": "1",
+                                                        "teachingClassType": teachingClassType,
+                                                        "checkConflict": "2",
+                                                        "checkCapacity": "2",
+                                                        "queryContent": ""
+                                                    },
+                                                    "pageSize": "300",
+                                                    "pageNumber": "0",
+                                                    "order": ""
+                                                };
+                                                const bodyData = "querySetting=" + encodeURIComponent(JSON.stringify(payload));
+                                                fetch(url, {
+                                                    method: 'POST',
+                                                    headers: headers,
+                                                    body: bodyData
+                                                }).then(r => r.text()).catch(e => console.error(e));
+                                            };
+                                            
+                                            // 2. 方案内课程 (POST)
+                                            fetchCoursePost(`/xsxkapp/sys/xsxkapp/elective/programCourse.do`, "FANKC");
+                                            
+                                            // 3. 推荐班课程 (POST)
+                                            fetchCoursePost(`/xsxkapp/sys/xsxkapp/elective/recommendedCourse.do`, "TJKC");
                                         }
                                         
                                         const clickNode = (text) => {
@@ -448,16 +487,11 @@ def run_playwright_login():
                                             return false;
                                         };
                                         
-                                        // 穷举可能存在的课程分类 Tab
+                                        // 作为补充兜底：依然穷举尝试点击可能的课程分类 Tab
                                         const tabsToClick = [
-                                            '方案内课程', 
-                                            '推荐班课程', 
-                                            '全校课程', 
-                                            '通识选修', 
-                                            '公共选修', 
-                                            '跨专业课程', 
-                                            '方案外课程',
-                                            '通识必修'
+                                            '方案内课程', '推荐班课程', '全校课程', 
+                                            '通识选修', '公共选修', '跨专业课程', 
+                                            '方案外课程', '通识必修'
                                         ];
                                         let currentTabIndex = 0;
                                         let retries = 0;
@@ -467,25 +501,24 @@ def run_playwright_login():
                                                 clearInterval(interval);
                                                 return;
                                             }
-                                            
-                                            // 尝试点击当前的 tab
                                             let success = clickNode(tabsToClick[currentTabIndex]);
-                                            
                                             if (success || retries >= 3) {
-                                                // 成功点击，或者重试了 3 次（4.5秒）还是找不到，就跳到下一个
                                                 currentTabIndex++;
                                                 retries = 0;
                                             } else {
-                                                // 找不到，继续重试当前 tab（可能是还没渲染出来）
                                                 retries++;
                                             }
                                         }, 1500);
                                         
-                                        // 最多尝试 30 秒后放弃
                                         setTimeout(() => clearInterval(interval), 30000);
                                     }
                                 """
-                                STATE["playwright_page"].evaluate(js_script.replace("__TOKEN__", STATE["token"]))
+                                final_script = js_script.replace("__TOKEN__", STATE["token"]) \
+                                                        .replace("__STUDENT_CODE__", STATE["studentCode"]) \
+                                                        .replace("__CAMPUS__", STATE.get("campus", "2")) \
+                                                        .replace("__BATCH__", STATE.get("electiveBatchCode", ""))
+                                                        
+                                STATE["playwright_page"].evaluate(final_script)
                                 STATE["auto_clicked_tabs"] = True
                                 push_log("🤖 自动为您模拟点击了【方案内课程】与【推荐班课程】以获取数据", "info")
                             except Exception:
