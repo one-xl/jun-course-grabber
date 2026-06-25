@@ -329,7 +329,9 @@ def run_playwright_login():
                                                 def is_truthy(val):
                                                     return str(val).lower() in ["true", "1"]
                                                 is_selected = is_truthy(c.get("selected")) or is_truthy(tc.get("selected")) or is_truthy(c.get("hasSelect")) or is_truthy(tc.get("hasSelect"))
-                                                
+                                                if "courseresult" in resp_url.lower() or "course_result" in resp_url.lower() or "teachingtime" in resp_url.lower():
+                                                    is_selected = True
+                                                    
                                                 course_data = {
                                                     "id": cid,
                                                     "name": str(c.get("courseName", c.get("departmentName", "未知课程"))),
@@ -705,17 +707,22 @@ def send_heartbeat():
         pass
 
 def try_silent_keepalive():
-    """静默保活：绝不刷新页面，只发 AJAX 探针维持 Session，同时这也兼具刷新课程状态的作用"""
+    """静默保活：定时拉取已选课表 (teachingTime.do)，既维持 Session，又能将已选状态同步给前端"""
     js_code = f"""
     () => {{
-        return fetch("{BASE_URL}/xsxkapp/sys/xsxkapp/elective/programCourse.do", {{
-            method: "POST",
+        const sc = "{STATE.get('studentCode', '')}";
+        const batch = "{STATE.get('electiveBatchCode', '')}";
+        const token = window._jnuToken || "{STATE.get('token', '')}";
+        if (!sc || !batch || !token) return 0;
+        
+        const url = `{BASE_URL}/xsxkapp/sys/xsxkapp/elective/teachingTime.do?timestamp=${{Date.now()}}&studentCode=${{sc}}&electiveBatchCode=${{batch}}`;
+        return fetch(url, {{
+            method: "GET",
             headers: {{
-                "Content-Type": "application/x-www-form-urlencoded; charset=UTF-8",
-                "X-Requested-With": "XMLHttpRequest"
-            }},
-            body: "data={{}}",
-            __isGrabber: true
+                "X-Requested-With": "XMLHttpRequest",
+                "token": token
+            }}
+            // 不加 __isGrabber，故意让前端的钩子拦截到，从而同步到 Python 后端
         }}).then(r => r.status).catch(() => 0);
     }}
     """
