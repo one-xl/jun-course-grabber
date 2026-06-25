@@ -153,6 +153,7 @@
       "uiTab": "XGXK"
     },
     {
+      "canSelect": "1",
       "credit": "1",
       "electiveBatchCode": "0b215876e50f4bd192016ad490e5ed4c",
       "id": "2627106666",
@@ -161,8 +162,7 @@
       "teachingClassType": "QXKC",
       "time": "1-18周 星期二 第7节-第8节 N篮球3",
       "type": "专业全校课",
-      "uiTab": "FANKC",
-      "canSelect": "1"
+      "uiTab": "FANKC"
     },
     {
       "credit": "2",
@@ -193,5 +193,5 @@
     "2627103979",
     "2627103987"
   ],
-  "timestamp": 1782370038678
+  "timestamp": 1782371339992
 }

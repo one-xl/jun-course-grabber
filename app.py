@@ -201,7 +201,7 @@ def run_playwright_login():
                                         if (this._url) {
                                             try {
                                                 const resp = JSON.parse(this.responseText);
-                                                if (this._url.includes("batch") || resp.dataList || resp.rows || (resp.data && Array.isArray(resp.data))) {
+                                                if (resp.dataList || resp.rows || (resp.data && Array.isArray(resp.data))) {
                                                     window._capturedResponses.push({
                                                         url: this._url,
                                                         text: this.responseText
@@ -311,19 +311,6 @@ def run_playwright_login():
                                     is_qxkc = True
                                 elif "curriculavariable" in resp_url.lower() or "xgxk" in resp_url.lower():
                                     inferred_class_type = "XGXK"
-
-                                if "batch" in resp_url.lower():
-                                    try:
-                                        with open("rounds_record.jsonl", "a", encoding="utf-8") as f:
-                                            record = {
-                                                "time": datetime.now().strftime("%Y-%m-%d %H:%M:%S"),
-                                                "url": resp_url,
-                                                "data": json.loads(resp_str)
-                                            }
-                                            f.write(json.dumps(record, ensure_ascii=False) + "\n")
-                                        push_log("📁 成功截获并记录轮次切换底层数据到 rounds_record.jsonl", "success")
-                                    except Exception:
-                                        pass
 
                                 try:
                                     body = json.loads(resp_str)
