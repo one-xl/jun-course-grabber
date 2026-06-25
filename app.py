@@ -438,14 +438,8 @@ def run_playwright_login():
                                                 "Content-Type": "application/x-www-form-urlencoded; charset=UTF-8",
                                                 "X-Requested-With": "XMLHttpRequest"
                                             };
-                                            
-                                            // 1. 通识课 / 跨轮次课程 (GET)
-                                            const curriculaUrl = `/xsxkapp/sys/xsxkapp/*default/curriculavariable.do?token=${token}`;
-                                            fetch(curriculaUrl, { headers })
-                                                .then(r => r.text())
-                                                .catch(e => console.error(e));
                                                 
-                                            // 构建 POST 请求辅助函数，直接把 pageSize 调到 300 拿全量
+                                            // 构建 POST 请求辅助函数，控制 pageSize 避免后端卡死
                                             const fetchCoursePost = (url, teachingClassType) => {
                                                 const payload = {
                                                     "data": {
@@ -458,7 +452,7 @@ def run_playwright_login():
                                                         "checkCapacity": "2",
                                                         "queryContent": ""
                                                     },
-                                                    "pageSize": "300",
+                                                    "pageSize": "20",
                                                     "pageNumber": "0",
                                                     "order": ""
                                                 };
@@ -470,10 +464,10 @@ def run_playwright_login():
                                                 }).then(r => r.text()).catch(e => console.error(e));
                                             };
                                             
-                                            // 2. 方案内课程 (POST)
+                                            // 1. 方案内课程 (POST)
                                             fetchCoursePost(`/xsxkapp/sys/xsxkapp/elective/programCourse.do`, "FANKC");
                                             
-                                            // 3. 推荐班课程 (POST)
+                                            // 2. 推荐班课程 (POST)
                                             fetchCoursePost(`/xsxkapp/sys/xsxkapp/elective/recommendedCourse.do`, "TJKC");
                                         }
                                         
