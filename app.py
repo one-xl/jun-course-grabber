@@ -426,12 +426,10 @@ def run_playwright_login():
                                     () => {
                                         if (window._autoClickerStarted) return;
                                         window._autoClickerStarted = true;
-                                        let clickedFanAn = false;
-                                        let clickedTuiJian = false;
                                         
                                         const clickNode = (text) => {
                                             const els = Array.from(document.querySelectorAll('li, div, span, a, button'));
-                                            const target = els.find(el => el.textContent && el.textContent.trim().includes(text) && el.children.length === 0);
+                                            const target = els.find(el => el.textContent && el.textContent.trim() === text && el.children.length === 0);
                                             if (target) {
                                                 target.click();
                                                 return true;
@@ -439,26 +437,34 @@ def run_playwright_login():
                                             return false;
                                         };
                                         
-                                        const interval = setInterval(() => {
-                                            if (!clickedFanAn && clickNode('方案内课程')) {
-                                                clickedFanAn = true;
-                                                setTimeout(() => {
-                                                    if (clickNode('推荐班课程')) {
-                                                        clickedTuiJian = true;
-                                                        clearInterval(interval);
-                                                    } else {
-                                                        // 如果1.5秒后找不到推荐班，恢复定时器继续找
-                                                        clickedTuiJian = false;
-                                                    }
-                                                }, 1500);
-                                            }
-                                            if (clickedFanAn && clickedTuiJian) {
-                                                clearInterval(interval);
-                                            }
-                                        }, 1000);
+                                        // 穷举可能存在的课程分类 Tab
+                                        const tabsToClick = [
+                                            '方案内课程', 
+                                            '推荐班课程', 
+                                            '全校课程', 
+                                            '通识选修', 
+                                            '公共选修', 
+                                            '跨专业课程', 
+                                            '方案外课程',
+                                            '通识必修'
+                                        ];
+                                        let currentTabIndex = 0;
                                         
-                                        // 最多尝试 15 秒后放弃
-                                        setTimeout(() => clearInterval(interval), 15000);
+                                        const interval = setInterval(() => {
+                                            if (currentTabIndex >= tabsToClick.length) {
+                                                clearInterval(interval);
+                                                return;
+                                            }
+                                            
+                                            // 尝试点击当前的 tab
+                                            clickNode(tabsToClick[currentTabIndex]);
+                                            
+                                            // 无论点击是否成功（有的界面可能没这个tab），都直接进入下一个，避免死等
+                                            currentTabIndex++;
+                                        }, 1500);
+                                        
+                                        // 最多尝试 20 秒后放弃
+                                        setTimeout(() => clearInterval(interval), 20000);
                                     }
                                 """)
                                 STATE["auto_clicked_tabs"] = True
