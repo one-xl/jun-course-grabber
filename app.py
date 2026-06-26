@@ -1,4 +1,11 @@
+import sys
 import os
+
+print("==================================================")
+print("  JNU Course Grabber 正在释放并加载核心组件...")
+print("  程序体积较大，由于底层环境配置，初次启动约需 5~15 秒，请耐心等待！")
+print("==================================================")
+
 import json
 import time
 import threading
@@ -14,9 +21,18 @@ import sys
 time_session = requests.Session()
 
 def get_resource_path(relative_path):
+    """获取随包资源文件路径（如 templates）"""
     if hasattr(sys, '_MEIPASS'):
         return os.path.join(sys._MEIPASS, relative_path)
-    return os.path.join(os.path.abspath("."), relative_path)
+    return os.path.join(os.path.abspath(os.path.dirname(__file__)), relative_path)
+
+def get_data_path(filename):
+    """获取数据保存路径（总是存放在可执行文件所在目录，而不是临时目录）"""
+    if getattr(sys, 'frozen', False):
+        base_dir = os.path.dirname(sys.executable)
+    else:
+        base_dir = os.path.dirname(os.path.abspath(__file__))
+    return os.path.join(base_dir, filename)
 
 app = Flask(__name__, template_folder=get_resource_path('templates'))
 
@@ -71,15 +87,28 @@ def run_playwright_login():
     try:
         with sync_playwright() as p:
             # 启动浏览器 (可见)
-            # 添加反风控参数：禁止走系统代理、抹除自动化特征
-            browser = p.chromium.launch(
-                headless=False, 
-                args=[
-                    '--no-proxy-server',
-                    '--disable-blink-features=AutomationControlled'
-                ]
-            )
             # 伪装正常中文用户时区和语言环境，解决易盾滑块风控报错
+            try:
+                push_log("正在尝试唤起系统 Edge 浏览器...", "info")
+                browser = p.chromium.launch(
+                    channel="msedge",
+                    headless=False, 
+                    args=[
+                        '--no-proxy-server',
+                        '--disable-blink-features=AutomationControlled'
+                    ]
+                )
+            except Exception as e:
+                push_log("找不到系统 Edge 浏览器，尝试使用 Chrome...", "warn")
+                browser = p.chromium.launch(
+                    channel="chrome",
+                    headless=False, 
+                    args=[
+                        '--no-proxy-server',
+                        '--disable-blink-features=AutomationControlled'
+                    ]
+                )
+                
             context = browser.new_context(
                 locale='zh-CN',
                 timezone_id='Asia/Shanghai'
@@ -329,7 +358,9 @@ def run_playwright_login():
                                                 def is_truthy(val):
                                                     return str(val).lower() in ["true", "1"]
                                                 is_selected = is_truthy(c.get("selected")) or is_truthy(tc.get("selected")) or is_truthy(c.get("hasSelect")) or is_truthy(tc.get("hasSelect"))
-                                                
+                                                if "courseresult" in resp_url.lower() or "course_result" in resp_url.lower() or "teachingtime" in resp_url.lower():
+                                                    is_selected = True
+                                                    
                                                 course_data = {
                                                     "id": cid,
                                                     "name": str(c.get("courseName", c.get("departmentName", "未知课程"))),
@@ -413,6 +444,61 @@ def run_playwright_login():
                 if not STATE["studentCode"]: missing.append("学号(studentCode)")
                 if not STATE["electiveBatchCode"]: missing.append("选课批次码(electiveBatchCode)")
                 if len(STATE["captured_courses"]) == 0: missing.append("课程列表(请点击选课分类)")
+
+                # 自动模拟点击方案内与推荐班（仅在 Token 获取后且未曾点击时触发）
+                if "auto_clicked_tabs" not in STATE:
+                    STATE["auto_clicked_tabs"] = False
+
+                if STATE["token"] and STATE["studentCode"] and not STATE["auto_clicked_tabs"]:
+                    if len(STATE["captured_courses"]) == 0:
+                        if "playwright_page" in STATE:
+                            try:
+                                js_script = """
+                                    () => {
+                                        if (window._autoClickerStarted) return;
+                                        window._autoClickerStarted = true;
+                                        
+                                        const clickNode = (text) => {
+                                            const els = Array.from(document.querySelectorAll('li, div, span, a, button'));
+                                            const target = els.find(el => el.textContent && el.textContent.includes(text) && el.children.length === 0);
+                                            if (target) {
+                                                target.click();
+                                                return true;
+                                            }
+                                            return false;
+                                        };
+                                        
+                                        // 核心：依次模拟点击关键的三个按钮，强制前端发出请求，从而让后端拦截并提取轮次码(batch_PRO, batch_XGXK)
+                                        const tabsToClick = [
+                                            '切换轮次', '方案内课程', '推荐班课程', 
+                                            '全校课程', '通识选修', '公共选修', 
+                                            '跨专业课程', '方案外课程', '通识必修'
+                                        ];
+                                        let currentTabIndex = 0;
+                                        let retries = 0;
+                                        
+                                        const interval = setInterval(() => {
+                                            if (currentTabIndex >= tabsToClick.length) {
+                                                clearInterval(interval);
+                                                return;
+                                            }
+                                            let success = clickNode(tabsToClick[currentTabIndex]);
+                                            if (success || retries >= 3) {
+                                                currentTabIndex++;
+                                                retries = 0;
+                                            } else {
+                                                retries++;
+                                            }
+                                        }, 1500);
+                                        
+                                        setTimeout(() => clearInterval(interval), 30000);
+                                    }
+                                """
+                                STATE["playwright_page"].evaluate(js_script)
+                                STATE["auto_clicked_tabs"] = True
+                                push_log("🤖 自动为您模拟点击【切换轮次】、【方案内课程】等按钮，以获取关键轮次码", "info")
+                            except Exception:
+                                pass
 
                 check_counter += 1
                 if len(missing) > 0 and check_counter % 5 == 0:
@@ -650,17 +736,22 @@ def send_heartbeat():
         pass
 
 def try_silent_keepalive():
-    """静默保活：绝不刷新页面，只发 AJAX 探针维持 Session，同时这也兼具刷新课程状态的作用"""
+    """静默保活：定时拉取已选课表 (teachingTime.do)，既维持 Session，又能将已选状态同步给前端"""
     js_code = f"""
     () => {{
-        return fetch("{BASE_URL}/xsxkapp/sys/xsxkapp/elective/programCourse.do", {{
-            method: "POST",
+        const sc = "{STATE.get('studentCode', '')}";
+        const batch = "{STATE.get('electiveBatchCode', '')}";
+        const token = window._jnuToken || "{STATE.get('token', '')}";
+        if (!sc || !batch || !token) return 0;
+        
+        const url = `{BASE_URL}/xsxkapp/sys/xsxkapp/elective/teachingTime.do?timestamp=${{Date.now()}}&studentCode=${{sc}}&electiveBatchCode=${{batch}}`;
+        return fetch(url, {{
+            method: "GET",
             headers: {{
-                "Content-Type": "application/x-www-form-urlencoded; charset=UTF-8",
-                "X-Requested-With": "XMLHttpRequest"
-            }},
-            body: "data={{}}",
-            __isGrabber: true
+                "X-Requested-With": "XMLHttpRequest",
+                "token": token
+            }}
+            // 不加 __isGrabber，故意让前端的钩子拦截到，从而同步到 Python 后端
         }}).then(r => r.status).catch(() => 0);
     }}
     """
@@ -1074,7 +1165,28 @@ def api_delete_course():
     cid = data.get("id")
     if cid:
         STATE["captured_courses"] = [c for c in STATE["captured_courses"] if c["id"] != cid]
+        try:
+            with open(get_data_path("targets.json"), "w", encoding="utf-8") as f:
+                json.dump({
+                    "courses": STATE["captured_courses"],
+                    "selected": STATE["selected_targets"]
+                }, f, ensure_ascii=False, indent=4)
+            return jsonify({"success": True})
+        except Exception as e:
+            return jsonify({"success": False, "msg": str(e)})
     return jsonify({"success": True})
+
+@app.route('/api/load_targets', methods=['GET'])
+def load_targets():
+    target_file = get_data_path("targets.json")
+    if not os.path.exists(target_file):
+        return jsonify({"success": True, "data": {"courses": [], "selected": []}})
+    try:
+        with open(target_file, "r", encoding="utf-8") as f:
+            data = json.load(f)
+        return jsonify({"success": True, "data": data})
+    except Exception as e:
+        return jsonify({"success": False, "msg": str(e)})
 
 @app.route("/api/fetch_courses_active", methods=["POST"])
 def api_fetch_courses_active():
@@ -1277,30 +1389,28 @@ if __name__ == "__main__":
         os.makedirs('templates')
         
     print("="*50)
-    print("正在初始化环境，请稍候...")
+    print("JNU 抢课系统 GUI 服务正在启动...")
+    print("="*50)
     
-    # 检查并下载 Playwright 浏览器内核 (针对 EXE 运行环境)
-    try:
-        p = sync_playwright().start()
-        browser_path = p.chromium.executable_path
-        p.stop()
-        if not os.path.exists(browser_path):
-            print("[INFO] 首次运行或未部署内核，正在为您全自动下载组件 (约 100MB)...")
-            from playwright._impl._driver import compute_driver_executable, get_driver_env
-            driver_executable = compute_driver_executable()
-            env = get_driver_env()
-            subprocess.run([str(driver_executable), "install", "chromium"], env=env, check=True)
-            print("[SUCCESS] 内核部署成功！")
-    except Exception as e:
-        print(f"[ERROR] 浏览器内核检查或下载失败: {e}")
-        print("请检查网络连接后重试！")
+    # 寻找可用端口
+    import socket
+    port = 5000
+    for p in range(5000, 5010):
+        with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as s:
+            if s.connect_ex(('127.0.0.1', p)) != 0:
+                port = p
+                break
 
-    print("="*50)
-    print("JNU 抢课系统 GUI 服务已启动！")
-    print("即将在浏览器中打开主页...")
-    print("="*50)
+    print(f"即将在浏览器中打开主页 (http://127.0.0.1:{port}) ...")
+    
+    # 关闭 PyInstaller 启动画面
+    try:
+        import pyi_splash
+        pyi_splash.close()
+    except ImportError:
+        pass
     
     # 延迟 1 秒打开浏览器
-    threading.Timer(1.0, lambda: webbrowser.open("http://127.0.0.1:5000")).start()
+    threading.Timer(1.0, lambda: webbrowser.open(f"http://127.0.0.1:{port}")).start()
     
-    app.run(port=5000, debug=False)
+    app.run(port=port, debug=False)
