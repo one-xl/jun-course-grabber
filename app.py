@@ -14,9 +14,18 @@ import sys
 time_session = requests.Session()
 
 def get_resource_path(relative_path):
+    """获取随包资源文件路径（如 templates）"""
     if hasattr(sys, '_MEIPASS'):
         return os.path.join(sys._MEIPASS, relative_path)
-    return os.path.join(os.path.abspath("."), relative_path)
+    return os.path.join(os.path.abspath(os.path.dirname(__file__)), relative_path)
+
+def get_data_path(filename):
+    """获取数据保存路径（总是存放在可执行文件所在目录，而不是临时目录）"""
+    if getattr(sys, 'frozen', False):
+        base_dir = os.path.dirname(sys.executable)
+    else:
+        base_dir = os.path.dirname(os.path.abspath(__file__))
+    return os.path.join(base_dir, filename)
 
 app = Flask(__name__, template_folder=get_resource_path('templates'))
 
@@ -71,15 +80,28 @@ def run_playwright_login():
     try:
         with sync_playwright() as p:
             # 启动浏览器 (可见)
-            # 添加反风控参数：禁止走系统代理、抹除自动化特征
-            browser = p.chromium.launch(
-                headless=False, 
-                args=[
-                    '--no-proxy-server',
-                    '--disable-blink-features=AutomationControlled'
-                ]
-            )
             # 伪装正常中文用户时区和语言环境，解决易盾滑块风控报错
+            try:
+                push_log("正在尝试唤起系统 Edge 浏览器...", "info")
+                browser = p.chromium.launch(
+                    channel="msedge",
+                    headless=False, 
+                    args=[
+                        '--no-proxy-server',
+                        '--disable-blink-features=AutomationControlled'
+                    ]
+                )
+            except Exception as e:
+                push_log("找不到系统 Edge 浏览器，尝试使用 Chrome...", "warn")
+                browser = p.chromium.launch(
+                    channel="chrome",
+                    headless=False, 
+                    args=[
+                        '--no-proxy-server',
+                        '--disable-blink-features=AutomationControlled'
+                    ]
+                )
+                
             context = browser.new_context(
                 locale='zh-CN',
                 timezone_id='Asia/Shanghai'
@@ -1136,7 +1158,28 @@ def api_delete_course():
     cid = data.get("id")
     if cid:
         STATE["captured_courses"] = [c for c in STATE["captured_courses"] if c["id"] != cid]
+        try:
+            with open(get_data_path("targets.json"), "w", encoding="utf-8") as f:
+                json.dump({
+                    "courses": STATE["captured_courses"],
+                    "selected": STATE["selected_targets"]
+                }, f, ensure_ascii=False, indent=4)
+            return jsonify({"success": True})
+        except Exception as e:
+            return jsonify({"success": False, "msg": str(e)})
     return jsonify({"success": True})
+
+@app.route('/api/load_targets', methods=['GET'])
+def load_targets():
+    target_file = get_data_path("targets.json")
+    if not os.path.exists(target_file):
+        return jsonify({"success": True, "data": {"courses": [], "selected": []}})
+    try:
+        with open(target_file, "r", encoding="utf-8") as f:
+            data = json.load(f)
+        return jsonify({"success": True, "data": data})
+    except Exception as e:
+        return jsonify({"success": False, "msg": str(e)})
 
 @app.route("/api/fetch_courses_active", methods=["POST"])
 def api_fetch_courses_active():
@@ -1339,30 +1382,21 @@ if __name__ == "__main__":
         os.makedirs('templates')
         
     print("="*50)
-    print("正在初始化环境，请稍候...")
+    print("JNU 抢课系统 GUI 服务正在启动...")
+    print("="*50)
     
-    # 检查并下载 Playwright 浏览器内核 (针对 EXE 运行环境)
-    try:
-        p = sync_playwright().start()
-        browser_path = p.chromium.executable_path
-        p.stop()
-        if not os.path.exists(browser_path):
-            print("[INFO] 首次运行或未部署内核，正在为您全自动下载组件 (约 100MB)...")
-            from playwright._impl._driver import compute_driver_executable, get_driver_env
-            driver_executable = compute_driver_executable()
-            env = get_driver_env()
-            subprocess.run([str(driver_executable), "install", "chromium"], env=env, check=True)
-            print("[SUCCESS] 内核部署成功！")
-    except Exception as e:
-        print(f"[ERROR] 浏览器内核检查或下载失败: {e}")
-        print("请检查网络连接后重试！")
+    # 寻找可用端口
+    import socket
+    port = 5000
+    for p in range(5000, 5010):
+        with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as s:
+            if s.connect_ex(('127.0.0.1', p)) != 0:
+                port = p
+                break
 
-    print("="*50)
-    print("JNU 抢课系统 GUI 服务已启动！")
-    print("即将在浏览器中打开主页...")
-    print("="*50)
+    print(f"即将在浏览器中打开主页 (http://127.0.0.1:{port}) ...")
     
     # 延迟 1 秒打开浏览器
-    threading.Timer(1.0, lambda: webbrowser.open("http://127.0.0.1:5000")).start()
+    threading.Timer(1.0, lambda: webbrowser.open(f"http://127.0.0.1:{port}")).start()
     
-    app.run(port=5000, debug=False)
+    app.run(port=port, debug=False)

@@ -16,36 +16,31 @@
 - **❤️ 智能心跳保活**：底层探针定时发送轻量级心跳请求（Silent Keepalive），长效维持选课系统的 Session，挂机一整晚也不掉线。
 - **📊 可视化面板与动态学分统计**：直观好用的 Web 控制台（基于 `templates/index.html` 构建），即刻同步选课学分状态，自动跳转对应轮次界面。
 
-## 📦 文件结构
+## 📦 下载即用 (推荐)
 
-```text
-JNU_Course_Grabber/
-├── app.py                     # 核心抢课与 Playwright 底层注入引擎
-├── templates/
-│   └── index.html             # 可视化抢课操作面板
-├── requirements.txt           # Python 依赖清单
-├── 抢课系统，启动！.bat         # Windows 一键启动脚本
-├── 使用文档.md / .docx        # 详细的使用指引
-└── 图片演示.docx              # 图文并茂的操作说明
-```
+本工具已经打包为**独立软件**，无需配置 Python 环境，小白即可一键启动：
 
-## 🛠️ 安装与使用
+1. **下载程序**：在 Releases 页面下载最新的 `JNU_Course_Grabber.exe`。
+2. **直接运行**：双击运行 `JNU_Course_Grabber.exe`。
+   - 首次运行时，Windows 可能会弹出保护提示，点击“更多信息” -> “仍要运行”。
+   - 程序将自动唤起你电脑自带的 Edge 浏览器，无需额外下载庞大的内核。
+3. **开始抢课**：
+   - 在弹出的浏览器中正常登录教务系统。
+   - 在黑框和弹出的控制台网页中，勾选目标课程即可一键挂机！
 
-1. **安装依赖**
-   请确保您已安装 Python 3.8 或以上版本。然后在终端中执行：
+## 🛠️ 源码构建与开发
+
+如果你想自行编译修改源码：
+
+1. **环境准备**：安装 Python 3.8+。
+2. **安装依赖**：
    ```bash
    pip install -r requirements.txt
-   playwright install chromium
    ```
-
-2. **启动系统**
-   - Windows 用户：直接双击 `抢课系统，启动！.bat`。
-   - 其他用户：在终端中运行 `python app.py`。
-
-3. **登录与配置**
-   - 脚本会自动打开浏览器并进入选课系统。
-   - 扫码或输入密码登录后，正常浏览到选课界面，系统会在后台自动捕获你的 `studentCode` 和 `electiveBatchCode`。
-   - 在本工具的控制台中搜索课程、加入目标、点击“开始抢课”即可挂机！
+3. **一键打包为 EXE**：
+   双击根目录下的 `build.bat` 脚本，即可全自动生成单文件独立的 `dist/JNU_Course_Grabber.exe` 软件。
+4. **源码运行**：
+   直接执行 `python app.py`。
 
 ## ⚠️ 免责声明
 
