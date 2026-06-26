@@ -1,4 +1,11 @@
+import sys
 import os
+
+print("==================================================")
+print("  JNU Course Grabber 正在释放并加载核心组件...")
+print("  程序体积较大，由于底层环境配置，初次启动约需 5~15 秒，请耐心等待！")
+print("==================================================")
+
 import json
 import time
 import threading
@@ -1395,6 +1402,13 @@ if __name__ == "__main__":
                 break
 
     print(f"即将在浏览器中打开主页 (http://127.0.0.1:{port}) ...")
+    
+    # 关闭 PyInstaller 启动画面
+    try:
+        import pyi_splash
+        pyi_splash.close()
+    except ImportError:
+        pass
     
     # 延迟 1 秒打开浏览器
     threading.Timer(1.0, lambda: webbrowser.open(f"http://127.0.0.1:{port}")).start()
