@@ -18,5 +18,13 @@ venv.bak/
 targets.json
 JNU_Course_Grabber/
 JNU_Course_Grabber.zip
+JNU_Course_Grabber.spec
+build/
+dist/
+*.docx
+*.md
+!README.md
+test_*.py
+dump_json.py
 
 .DS_Store
