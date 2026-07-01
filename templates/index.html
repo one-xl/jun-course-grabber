@@ -442,9 +442,14 @@
 </head>
 <body>
 
-    <div>
-        <h1>JNU Course Grabber</h1>
-        <div class="header-sub">暨南大学选课系统自动化终端</div>
+    <div style="display: flex; justify-content: space-between; align-items: center; max-width: 1200px; margin: 0 auto; padding: 0 20px;">
+        <div>
+            <h1>JNU Course Grabber</h1>
+            <div class="header-sub">暨南大学选课系统自动化终端</div>
+        </div>
+        <div>
+            <button class="btn" style="background-color: var(--danger); border-color: var(--danger);" onclick="clearDatabase()">🗑️ 清空本地数据库</button>
+        </div>
     </div>
 
     <div class="main-wrapper">
@@ -673,6 +678,24 @@
         let grabbedCourseIds = new Set();  // 已经成功选上的课程
         let selectedCourseIds = new Set(); // 前端打勾了，准备抢的课程
         let waitlistCourseIds = new Set(); // 正在候补的课程
+
+        async function clearDatabase() {
+            if (!confirm("确定要清空本地数据库吗？\n这将清除所有本地缓存的课程和待抢目标，但不会影响已在教务系统中选上的课程。")) return;
+            try {
+                const res = await fetch('/api/database/clear', { method: 'POST' });
+                const data = await res.json();
+                if (data.success) {
+                    log("本地数据库已清空", "success");
+                    allCourses = [];
+                    selectedCourseIds.clear();
+                    renderCourses();
+                } else {
+                    log("清空失败: " + data.msg, "error");
+                }
+            } catch (e) {
+                log("清空请求失败: " + e, "error");
+            }
+        }
 
         async function toggleWaitlist(id) {
             const course = allCourses.find(c => c.id === id);

@@ -1186,6 +1186,18 @@ def api_delete_course():
             return jsonify({"success": False, "msg": str(e)})
     return jsonify({"success": True})
 
+@app.route('/api/database/clear', methods=['POST'])
+def clear_database():
+    try:
+        target_file = get_data_path("targets.json")
+        with open(target_file, "w", encoding="utf-8") as f:
+            json.dump({"courses": [], "selected": []}, f, ensure_ascii=False, indent=4)
+        STATE["captured_courses"] = []
+        STATE["selected_targets"] = []
+        return jsonify({"success": True})
+    except Exception as e:
+        return jsonify({"success": False, "msg": str(e)})
+
 @app.route('/api/load_targets', methods=['GET'])
 def load_targets():
     target_file = get_data_path("targets.json")
