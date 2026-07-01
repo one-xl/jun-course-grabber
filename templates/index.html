@@ -1321,14 +1321,17 @@
             
             // 使用 (课程号-老师名字) 或 (课程名-老师名字) 来进行学分去重，避免将多个备选同门课程学分累加
             let processedPendingGroups = new Set();
+            let processedGrabbedGroups = new Set();
             
             allCourses.forEach(c => {
                 const cred = parseFloat(c.credit || 0);
                 if (grabbedCourseIds.has(c.id)) {
-                    // 已选上的课，只要ID在 grabbedCourseIds 里就算，因为教务处允许的才会算作真正已选。
-                    // 但是通常情况下如果教务处不允许重复选课，那这里的ID也是唯一的。
-                    // 也可以进行去重：
-                    grabbedCreditSum += cred;
+                    // 已选上的课，根据课程号去重，防止搜索时同一门课多个班都带有hasSelect=true导致重复计算
+                    const uniqueKey = c.courseCode || c.name;
+                    if (!processedGrabbedGroups.has(uniqueKey)) {
+                        processedGrabbedGroups.add(uniqueKey);
+                        grabbedCreditSum += cred;
+                    }
                 }
             });
             
@@ -1581,6 +1584,9 @@
                 const isSelected = selectedCourseIds.has(c.id);
                 
                 let nameHtml = `<span style="font-weight: 600; color: var(--accent-blue);">${c.name}</span> <span style="font-size:0.75rem; color:#888;">[${c.type}]</span>`;
+                if (c.courseCode) {
+                    nameHtml += `<br><span style="font-size: 0.8rem; color: #aaa;">课程号: ${c.courseCode}</span>`;
+                }
                 if (c.isConflict === "1") {
                     nameHtml += `<br><span style="font-size: 0.75rem; color: var(--danger);" title="${c.conflictDesc}">⚠️ 冲突: ${c.conflictDesc}</span>`;
                 }

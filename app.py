@@ -347,7 +347,13 @@ def run_playwright_login():
                                     
                                     if "courseresult.do" in resp_url.lower() and isinstance(courses, list):
                                         try:
-                                            total_cred = sum(float(str(c.get("credit", c.get("courseCredit", "0")))) for c in courses if isinstance(c, dict))
+                                            unique_credits = {}
+                                            for c in courses:
+                                                if isinstance(c, dict):
+                                                    c_num = str(c.get("courseNumber", c.get("courseCode", c.get("courseId", c.get("id", "")))))
+                                                    cred = float(str(c.get("credit", c.get("courseCredit", "0"))))
+                                                    unique_credits[c_num] = cred
+                                            total_cred = sum(unique_credits.values())
                                             if total_cred > 0:
                                                 STATE["selected_credit"] = total_cred
                                         except Exception:
