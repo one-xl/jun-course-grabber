@@ -95,7 +95,8 @@ def run_playwright_login():
                     headless=False, 
                     args=[
                         '--no-proxy-server',
-                        '--disable-blink-features=AutomationControlled'
+                        '--disable-blink-features=AutomationControlled',
+                        '--start-maximized'
                     ]
                 )
             except Exception as e:
@@ -105,13 +106,15 @@ def run_playwright_login():
                     headless=False, 
                     args=[
                         '--no-proxy-server',
-                        '--disable-blink-features=AutomationControlled'
+                        '--disable-blink-features=AutomationControlled',
+                        '--start-maximized'
                     ]
                 )
                 
             context = browser.new_context(
                 locale='zh-CN',
-                timezone_id='Asia/Shanghai'
+                timezone_id='Asia/Shanghai',
+                no_viewport=True
             )
             page = context.new_page()
 
