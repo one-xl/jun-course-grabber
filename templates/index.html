@@ -1754,12 +1754,17 @@
             try {
                 logToTerminal(new Date().toLocaleTimeString(), `🔥 触发组合换课：退选 [${dropName}] ➡️ 抢选 [${grabName}]`, "warn");
                 
+                const dropCourseObj = allCourses.find(c => c.id === dropId);
+                const grabCourseObj = allCourses.find(c => c.id === grabId);
+                
                 const res = await fetch("/api/execute_swap_task", {
                     method: "POST",
                     headers: { "Content-Type": "application/json" },
                     body: JSON.stringify({
                         dropId: dropId,
                         grabId: grabId,
+                        dropCourse: dropCourseObj,
+                        grabCourse: grabCourseObj,
                         interval: interval
                     })
                 });

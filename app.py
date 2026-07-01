@@ -1291,9 +1291,27 @@ def api_execute_swap_task():
             
         STATE["stop_event"].clear()
         
-        drop_c = next((x for x in STATE["captured_courses"] if x["id"] == drop_id), None)
-        grab_c = next((x for x in STATE["captured_courses"] if x["id"] == grab_id), None)
+        drop_c = data.get("dropCourse")
+        grab_c = data.get("grabCourse")
         
+        if grab_c:
+            exist_grab = next((x for x in STATE["captured_courses"] if x["id"] == grab_id), None)
+            if not exist_grab:
+                STATE["captured_courses"].append(grab_c)
+            else:
+                exist_grab.update(grab_c)
+        else:
+            grab_c = next((x for x in STATE["captured_courses"] if x["id"] == grab_id), None)
+            
+        if drop_c:
+            exist_drop = next((x for x in STATE["captured_courses"] if x["id"] == drop_id), None)
+            if not exist_drop:
+                STATE["captured_courses"].append(drop_c)
+            else:
+                exist_drop.update(drop_c)
+        else:
+            drop_c = next((x for x in STATE["captured_courses"] if x["id"] == drop_id), None)
+            
         if not grab_c:
             return jsonify({"success": False, "msg": "Cannot find grab target"})
             
