@@ -1575,6 +1575,43 @@
             updateCreditDisplay();
         }
 
+        // 一键退选课程（从教务系统中发起退选）
+        async function dropCourse(id, name) {
+            const confirmed = confirm(`⚠️ 警告！你确定要向学校系统发起退选操作吗？\n\n课程名称：${name}\n班级ID：${id}\n\n此操作会立即在学校教务系统中退选这门课程！`);
+            if (!confirmed) return;
+            
+            try {
+                logToTerminal(new Date().toLocaleTimeString(), `正在向教务系统申请退选 [${name}] (${id})...`, "warn");
+                const res = await fetch('/api/drop_course', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ id: id })
+                });
+                const data = await res.json();
+                if (data.success) {
+                    logToTerminal(new Date().toLocaleTimeString(), `退选成功：[${name}]`, "success");
+                    alert("退选成功！已在教务系统中退选该课程。");
+                    // 从本地缓存中彻底移除已选标记，并重新渲染
+                    grabbedCourseIds.delete(id);
+                    allCourses.forEach(c => {
+                        if (c.id === id) {
+                            c.selected = false;
+                        }
+                    });
+                    saveTargets();
+                    renderCourses();
+                    updateCreditDisplay();
+                } else {
+                    logToTerminal(new Date().toLocaleTimeString(), `退选失败: ${data.msg}`, "error");
+                    alert(`退选失败: ${data.msg}`);
+                }
+            } catch (e) {
+                console.error("退选出错", e);
+                logToTerminal(new Date().toLocaleTimeString(), `退选连接异常: ${e.message}`, "error");
+                alert(`网络异常: ${e.message}`);
+            }
+        }
+
         // 移除课程（包括前端列表和后端状态）
         async function removeCourse(id) {
             if (!confirm("确定要将此课程从本地列表和勾选中移除吗？")) return;
@@ -1689,6 +1726,7 @@
                     <td>${c.credit}</td>
                     <td style="font-size: 0.8rem; color: #aaa;">${c.time || "未知"}</td>
                     <td>
+                        ${isGrabbed ? `<button class="btn btn-danger" style="padding: 2px 8px; font-size: 0.7rem; margin-bottom: 4px; background: #c0392b; border-color: #c0392b; color: white;" onclick="dropCourse('${c.id}', '${c.name.replace(/'/g, "\\'")}')">一键退选</button><br>` : ''}
                         <button class="btn ${isWaitlisted ? 'btn-danger' : ''}" style="padding: 2px 8px; font-size: 0.7rem; margin-bottom: 4px; ${isWaitlisted ? '' : 'border-color: var(--warn); color: var(--warn);'}" onclick="toggleWaitlist('${c.id}')">${isWaitlisted ? '取消候补' : '加入候补'}</button>
                         <br>
                         <button class="btn btn-danger" style="padding: 2px 8px; font-size: 0.7rem;" onclick="removeCourse('${c.id}')">删除</button>

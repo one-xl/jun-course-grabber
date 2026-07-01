@@ -1216,6 +1216,67 @@ def api_delete_course():
             return jsonify({"success": False, "msg": str(e)})
     return jsonify({"success": True})
 
+@app.route("/api/drop_course", methods=["POST"])
+def api_drop_course():
+    try:
+        data = request.json
+        cid = data.get("id")
+        exist_c = next((x for x in STATE["captured_courses"] if x["id"] == cid), None)
+        batch_code = (exist_c.get("electiveBatchCode") if exist_c else None) or STATE.get("electiveBatchCode", "")
+        
+        delete_param = {
+            "data": {
+                "operationType": "2",
+                "studentCode": STATE["studentCode"],
+                "electiveBatchCode": batch_code,
+                "teachingClassId": cid,
+                "isMajor": STATE.get("isMajor", "1")
+            }
+        }
+        
+        import json
+        import urllib.parse
+        param_json = json.dumps(delete_param, ensure_ascii=False)
+        encoded_param = urllib.parse.quote(param_json)
+        timestamp = int(time.time() * 1000)
+        target_url = f"https://jwxk.jnu.edu.cn/xsxkapp/sys/xsxkapp/elective/deleteVolunteer.do?timestamp={timestamp}&deleteParam={encoded_param}"
+        
+        js_code = f"""
+        () => {{
+            return fetch("{target_url}", {{
+                method: "GET",
+                headers: {{
+                    "X-Requested-With": "XMLHttpRequest",
+                    "token": window._jnuToken || "{STATE.get('token', '')}"
+                }},
+                __isGrabber: true
+            }}).then(res => res.json()).catch(err => ({{ code: "-1", msg: err.toString() }}));
+        }}
+        """
+        
+        res_q = queue.Queue()
+        STATE["cmd_queue"].put((js_code, res_q))
+        
+        try:
+            res = res_q.get(timeout=10)
+        except queue.Empty:
+            return jsonify({"success": False, "msg": "Request timeout in browser"})
+            
+        if isinstance(res, str) and res.startswith("ERROR:"):
+            return jsonify({"success": False, "msg": f"Browser error: {res[6:]}"})
+            
+        if res and str(res.get("code")) == "1":
+            if cid in STATE.setdefault("true_grabbed_ids", set()):
+                STATE["true_grabbed_ids"].remove(cid)
+            if exist_c:
+                exist_c["selected"] = False
+            return jsonify({"success": True, "msg": "Drop success"})
+        else:
+            return jsonify({"success": False, "msg": res.get("msg", "Drop failed")})
+            
+    except Exception as e:
+        return jsonify({"success": False, "msg": f"Exception: {str(e)}"})
+
 @app.route('/api/database/clear', methods=['POST'])
 def clear_database():
     try:
