@@ -1277,6 +1277,86 @@ def api_drop_course():
     except Exception as e:
         return jsonify({"success": False, "msg": f"Exception: {str(e)}"})
 
+@app.route("/api/execute_swap_task", methods=["POST"])
+def api_execute_swap_task():
+    try:
+        data = request.json
+        drop_id = data.get("dropId")
+        grab_id = data.get("grabId")
+        interval = float(data.get("interval", 1.0))
+        
+        if STATE.get("is_grabbing"):
+            STATE["stop_event"].set()
+            time.sleep(0.5)
+            
+        STATE["stop_event"].clear()
+        
+        drop_c = next((x for x in STATE["captured_courses"] if x["id"] == drop_id), None)
+        grab_c = next((x for x in STATE["captured_courses"] if x["id"] == grab_id), None)
+        
+        if not grab_c:
+            return jsonify({"success": False, "msg": "Cannot find grab target"})
+            
+        drop_batch = (drop_c.get("electiveBatchCode") if drop_c else None) or STATE.get("electiveBatchCode", "")
+        
+        import threading
+        def run_swap():
+            STATE["is_grabbing"] = True
+            push_log("🔥 [换课任务启动] 正在发送退选请求...", "warn")
+            
+            delete_param = {
+                "data": {
+                    "operationType": "2",
+                    "studentCode": STATE["studentCode"],
+                    "electiveBatchCode": drop_batch,
+                    "teachingClassId": drop_id,
+                    "isMajor": STATE.get("isMajor", "1")
+                }
+            }
+            import json
+            import urllib.parse
+            param_json = json.dumps(delete_param, ensure_ascii=False)
+            encoded_param = urllib.parse.quote(param_json)
+            timestamp = int(time.time() * 1000)
+            target_url = f"https://jwxk.jnu.edu.cn/xsxkapp/sys/xsxkapp/elective/deleteVolunteer.do?timestamp={timestamp}&deleteParam={encoded_param}"
+            
+            js_code = f"""
+            () => {{
+                return fetch("{target_url}", {{
+                    method: "GET",
+                    headers: {{
+                        "X-Requested-With": "XMLHttpRequest",
+                        "token": window._jnuToken || "{STATE.get('token', '')}"
+                    }},
+                    __isGrabber: true
+                }}).then(res => res.json()).catch(err => ({{ code: "-1", msg: err.toString() }}));
+            }}
+            """
+            res_q = queue.Queue()
+            STATE["cmd_queue"].put((js_code, res_q))
+            try:
+                res = res_q.get(timeout=8)
+                if res and str(res.get("code")) == "1":
+                    push_log(f"✅ [退选成功] 课程 {drop_id} 已退选！", "success")
+                    if drop_id in STATE.setdefault("true_grabbed_ids", set()):
+                        STATE["true_grabbed_ids"].remove(drop_id)
+                    if drop_c:
+                        drop_c["selected"] = False
+                else:
+                    msg = res.get("msg", "未知原因") if res else "无响应"
+                    push_log(f"⚠️ [退选返回] {msg} (不管退选是否成功，立即开始抢课...)", "warn")
+            except Exception as e:
+                push_log(f"⚠️ [退选异常] {str(e)} (立即开始抢选新课...)", "warn")
+            
+            push_log(f"🚀 [换课抢选开始] 正在抢选目标 {grab_c['name']}...", "success")
+            grabbing_loop([grab_c], interval=interval)
+            
+        threading.Thread(target=run_swap, daemon=True).start()
+        return jsonify({"success": True, "msg": "Swap task started"})
+        
+    except Exception as e:
+        return jsonify({"success": False, "msg": f"Exception: {str(e)}"})
+
 @app.route('/api/database/clear', methods=['POST'])
 def clear_database():
     try:

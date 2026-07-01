@@ -641,6 +641,42 @@
                 </div>
             </div>
 
+            <!-- 组合换课任务 -->
+            <div class="glass-panel" id="section-swap-tasks" style="opacity: 0.5; pointer-events: none; margin-top: 20px;">
+                <div class="flex-row">
+                    <h2>⚡ 自定义组合换课（退选 ➡️ 抢选）</h2>
+                    <span style="font-size: 0.85rem; color: var(--warn);">先自动退选已选课，再以极速并发立即抢选新目标（防止时间冲突/超学分拦截）</span>
+                </div>
+                
+                <div style="margin-top: 15px; display: flex; gap: 12px; align-items: center; flex-wrap: wrap;">
+                    <div style="display: flex; align-items: center; gap: 8px;">
+                        <label for="swap-drop-select" style="font-size: 0.9rem; white-space: nowrap;">1. 待退选已选课:</label>
+                        <select id="swap-drop-select" style="min-width: 200px; max-width: 300px; padding: 6px 10px;">
+                            <option value="">-- 请选择已选课程 --</option>
+                        </select>
+                    </div>
+                    
+                    <div style="font-weight: bold; color: var(--warn); font-size: 1.2rem;">➔</div>
+                    
+                    <div style="display: flex; align-items: center; gap: 8px;">
+                        <label for="swap-grab-select" style="font-size: 0.9rem; white-space: nowrap;">2. 待抢选新目标:</label>
+                        <select id="swap-grab-select" style="min-width: 200px; max-width: 300px; padding: 6px 10px;">
+                            <option value="">-- 请选择待抢课程 --</option>
+                        </select>
+                    </div>
+                    
+                    <button class="btn" style="border-color: var(--accent-blue); color: var(--accent-blue); padding: 6px 16px;" onclick="addSwapTask()">添加组合任务</button>
+                </div>
+                
+                <!-- 组合任务列表 -->
+                <div style="margin-top: 20px;">
+                    <h3 style="font-size: 0.95rem; color: #fff; margin-bottom: 10px;">已配置换课任务链</h3>
+                    <div id="swap-task-list" style="display: flex; flex-direction: column; gap: 10px;">
+                        <!-- 动态渲染 -->
+                    </div>
+                </div>
+            </div>
+
             <!-- 第 4 部分：控制台输出 -->
             <div class="glass-panel">
                 <h2 style="margin-bottom: 15px; font-size: 1.2rem;">实时监控台 Terminal</h2>
@@ -1273,6 +1309,8 @@
                     document.getElementById('section-control').style.pointerEvents = 'auto';
                     document.getElementById('section-public-courses').style.opacity = '1';
                     document.getElementById('section-public-courses').style.pointerEvents = 'auto';
+                    document.getElementById('section-swap-tasks').style.opacity = '1';
+                    document.getElementById('section-swap-tasks').style.pointerEvents = 'auto';
 
                     logToTerminal(new Date().toLocaleTimeString(), "已接入系统，正在并发主动拉取推荐/方案内课程，并刷新离线库状态...", "info");
                     
@@ -1612,6 +1650,169 @@
             }
         }
 
+        // 组合换课数据管理与执行
+        let swapTasks = [];
+        
+        function loadSwapTasks() {
+            try {
+                const stored = localStorage.getItem("jnu_swap_tasks");
+                if (stored) {
+                    swapTasks = JSON.parse(stored);
+                }
+            } catch (e) {
+                console.error("Failed to load swap tasks", e);
+            }
+            renderSwapTasks();
+        }
+        
+        function saveSwapTasks() {
+            try {
+                localStorage.setItem("jnu_swap_tasks", JSON.stringify(swapTasks));
+            } catch (e) {
+                console.error("Failed to save swap tasks", e);
+            }
+            renderSwapTasks();
+        }
+        
+        function addSwapTask() {
+            const dropId = document.getElementById("swap-drop-select").value;
+            const grabId = document.getElementById("swap-grab-select").value;
+            
+            if (!dropId || !grabId) {
+                alert("请同时选择待退选课和待抢选课！");
+                return;
+            }
+            
+            const dropC = allCourses.find(c => c.id === dropId);
+            const grabC = allCourses.find(c => c.id === grabId);
+            
+            if (!dropC || !grabC) {
+                alert("找不到所选课程数据！");
+                return;
+            }
+            
+            const exists = swapTasks.some(t => t.dropId === dropId && t.grabId === grabId);
+            if (exists) {
+                alert("该换课组合已配置！");
+                return;
+            }
+            
+            swapTasks.push({
+                dropId: dropId,
+                dropName: dropC.name,
+                grabId: grabId,
+                grabName: grabC.name
+            });
+            
+            saveSwapTasks();
+            document.getElementById("swap-drop-select").value = "";
+            document.getElementById("swap-grab-select").value = "";
+        }
+        
+        function removeSwapTask(index) {
+            swapTasks.splice(index, 1);
+            saveSwapTasks();
+        }
+        
+        function renderSwapTasks() {
+            const listContainer = document.getElementById("swap-task-list");
+            if (!listContainer) return;
+            
+            listContainer.innerHTML = "";
+            if (swapTasks.length === 0) {
+                listContainer.innerHTML = '<div style="color: #666; font-size: 0.85rem; padding: 10px; border: 1px dashed #444; border-radius: 6px; text-align: center;">暂无配置的组合换课链</div>';
+                return;
+            }
+            
+            swapTasks.forEach((task, index) => {
+                const row = document.createElement("div");
+                row.style.cssText = "display: flex; justify-content: space-between; align-items: center; background: rgba(255,255,255,0.03); border: 1px solid #333; padding: 10px 15px; border-radius: 6px; margin-top: 6px;";
+                
+                row.innerHTML = `
+                    <div style="display: flex; align-items: center; gap: 10px; font-size: 0.9rem;">
+                        <span style="color: var(--danger); font-weight: bold;">退选:</span>
+                        <span style="color: #fff; font-weight: 500;">[${task.dropId}] ${task.dropName}</span>
+                        <span style="color: var(--warn); font-weight: bold;">➔</span>
+                        <span style="color: var(--success); font-weight: bold;">抢选:</span>
+                        <span style="color: #fff; font-weight: 500;">[${task.grabId}] ${task.grabName}</span>
+                    </div>
+                    <div style="display: flex; gap: 8px;">
+                        <button class="btn" style="padding: 4px 12px; font-size: 0.8rem; background: var(--warn); border-color: var(--warn); color: var(--bg-color);" onclick="executeSwapTask('${task.dropId}', '${task.grabId}', '${task.dropName.replace(/'/g, "\\'")}', '${task.grabName.replace(/'/g, "\\'")}')">⚡ 立即执行换课</button>
+                        <button class="btn btn-danger" style="padding: 4px 12px; font-size: 0.8rem;" onclick="removeSwapTask(${index})">删除</button>
+                    </div>
+                `;
+                listContainer.appendChild(row);
+            });
+        }
+        
+        async function executeSwapTask(dropId, grabId, dropName, grabName) {
+            const confirmed = confirm(`⚠️ 终极警告！您即将执行【组合换课】任务：\\n\\n1. 立即退选已选课：【${dropName}】\\n2. 立即以极速循环抢选新课：【${grabName}】\\n\\n此操作存在“退了旧课但未能抢到新课”的风险！请确认您知悉该风险并同意继续！`);
+            if (!confirmed) return;
+            
+            const interval = parseFloat(document.getElementById("input-interval").value) || 1.0;
+            
+            try {
+                logToTerminal(new Date().toLocaleTimeString(), `🔥 触发组合换课：退选 [${dropName}] ➡️ 抢选 [${grabName}]`, "warn");
+                
+                const res = await fetch("/api/execute_swap_task", {
+                    method: "POST",
+                    headers: { "Content-Type": "application/json" },
+                    body: JSON.stringify({
+                        dropId: dropId,
+                        grabId: grabId,
+                        interval: interval
+                    })
+                });
+                
+                const data = await res.json();
+                if (data.success) {
+                    logToTerminal(new Date().toLocaleTimeString(), `换课引擎成功启动！`, "success");
+                    isGrabbing = true;
+                    document.getElementById('btn-start').disabled = true;
+                    document.getElementById('btn-start-schedule').disabled = true;
+                    document.getElementById('btn-stop').disabled = false;
+                } else {
+                    logToTerminal(new Date().toLocaleTimeString(), `换课任务启动失败: ${data.msg}`, "error");
+                    alert(`启动失败: ${data.msg}`);
+                }
+            } catch (e) {
+                console.error("执行换课异常", e);
+                logToTerminal(new Date().toLocaleTimeString(), `换课连接异常: ${e.message}`, "error");
+            }
+        }
+        
+        function updateSwapSelects() {
+            const dropSelect = document.getElementById("swap-drop-select");
+            const grabSelect = document.getElementById("swap-grab-select");
+            if (!dropSelect || !grabSelect) return;
+            
+            const prevDropVal = dropSelect.value;
+            const prevGrabVal = grabSelect.value;
+            
+            dropSelect.innerHTML = '<option value="">-- 请选择已选课程 --</option>';
+            grabSelect.innerHTML = '<option value="">-- 请选择待抢课程 --</option>';
+            
+            allCourses.forEach(c => {
+                const isGrabbed = grabbedCourseIds.has(String(c.id));
+                const displayText = `[${c.id}] ${c.name} (${c.teacher || '未知'})`;
+                
+                if (isGrabbed) {
+                    const opt = document.createElement("option");
+                    opt.value = c.id;
+                    opt.textContent = displayText;
+                    dropSelect.appendChild(opt);
+                } else {
+                    const opt = document.createElement("option");
+                    opt.value = c.id;
+                    opt.textContent = displayText;
+                    grabSelect.appendChild(opt);
+                }
+            });
+            
+            dropSelect.value = prevDropVal;
+            grabSelect.value = prevGrabVal;
+        }
+
         // 移除课程（包括前端列表和后端状态）
         async function removeCourse(id) {
             if (!confirm("确定要将此课程从本地列表和勾选中移除吗？")) return;
@@ -1738,6 +1939,7 @@
 
             // 同步刷新右侧课表
             renderTimetable();
+            updateSwapSelects();
         }
 
         // 课表时间解析器
@@ -1902,6 +2104,7 @@
         // 初始化
         logToTerminal(new Date().toLocaleTimeString('zh-CN', {hour12: false}), "系统初始化完成，等待用户接入...", "info");
         checkStatus();
+        loadSwapTasks();
 
         // 悬浮窗拖拽逻辑
         const modal = document.getElementById('timetable-modal');
