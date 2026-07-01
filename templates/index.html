@@ -45,7 +45,7 @@
             flex-direction: column;
             gap: 24px;
             width: 100%;
-            max-width: 960px;
+            max-width: 96%;
         }
 
         .container {
@@ -442,7 +442,7 @@
 </head>
 <body>
 
-    <div style="display: flex; justify-content: space-between; align-items: center; max-width: 1200px; margin: 0 auto; padding: 0 20px;">
+    <div style="display: flex; justify-content: space-between; align-items: center; max-width: 96%; margin: 0 auto; padding: 0 20px;">
         <div>
             <h1>JNU Course Grabber</h1>
             <div class="header-sub">暨南大学选课系统自动化终端</div>
@@ -571,7 +571,7 @@
                                 <th width="100">状态</th>
                                 <th width="80">学分</th>
                                 <th>时间</th>
-                                <th width="60">操作</th>
+                                <th width="280">操作</th>
                             </tr>
                         </thead>
                         <tbody id="course-tbody">
@@ -1726,10 +1726,11 @@
                     <td>${c.credit}</td>
                     <td style="font-size: 0.8rem; color: #aaa;">${c.time || "未知"}</td>
                     <td>
-                        ${isGrabbed ? `<button class="btn btn-danger" style="padding: 2px 8px; font-size: 0.7rem; margin-bottom: 4px; background: #c0392b; border-color: #c0392b; color: white;" onclick="dropCourse('${c.id}', '${c.name.replace(/'/g, "\\'")}')">一键退选</button><br>` : ''}
-                        <button class="btn ${isWaitlisted ? 'btn-danger' : ''}" style="padding: 2px 8px; font-size: 0.7rem; margin-bottom: 4px; ${isWaitlisted ? '' : 'border-color: var(--warn); color: var(--warn);'}" onclick="toggleWaitlist('${c.id}')">${isWaitlisted ? '取消候补' : '加入候补'}</button>
-                        <br>
-                        <button class="btn btn-danger" style="padding: 2px 8px; font-size: 0.7rem;" onclick="removeCourse('${c.id}')">删除</button>
+                        <div style="display: flex; gap: 8px; align-items: center; flex-wrap: nowrap;">
+                            ${isGrabbed ? `<button class="btn btn-danger" style="padding: 6px 12px; font-size: 0.85rem; background: #c0392b; border-color: #c0392b; color: white; white-space: nowrap;" onclick="dropCourse('${c.id}', '${c.name.replace(/'/g, "\\'")}')">一键退选</button>` : ''}
+                            <button class="btn ${isWaitlisted ? 'btn-danger' : ''}" style="padding: 6px 12px; font-size: 0.85rem; white-space: nowrap; ${isWaitlisted ? '' : 'border-color: var(--warn); color: var(--warn);'}" onclick="toggleWaitlist('${c.id}')">${isWaitlisted ? '取消候补' : '加入候补'}</button>
+                            <button class="btn btn-danger" style="padding: 6px 12px; font-size: 0.85rem; white-space: nowrap;" onclick="removeCourse('${c.id}')">删除</button>
+                        </div>
                     </td>
                 `;
                 tbody.appendChild(tr);
