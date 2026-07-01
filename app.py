@@ -1360,18 +1360,20 @@ def api_execute_swap_task():
             res_q = queue.Queue()
             STATE["cmd_queue"].put((js_code, res_q))
             try:
+                drop_name = drop_c.get("name") if drop_c else drop_id
                 res = res_q.get(timeout=8)
                 if res and str(res.get("code")) == "1":
-                    push_log(f"✅ [退选成功] 课程 {drop_id} 已退选！", "success")
+                    push_log(f"✅ [退选成功] 课程 [{drop_name}] 已成功退选！", "success")
                     if drop_id in STATE.setdefault("true_grabbed_ids", set()):
                         STATE["true_grabbed_ids"].remove(drop_id)
                     if drop_c:
                         drop_c["selected"] = False
                 else:
                     msg = res.get("msg", "未知原因") if res else "无响应"
-                    push_log(f"⚠️ [退选返回] {msg} (不管退选是否成功，立即开始抢课...)", "warn")
+                    push_log(f"❌ [退选失败] 课程 [{drop_name}] 退选失败！原因: {msg} (不管退选是否成功，立即开始抢课...)", "error")
             except Exception as e:
-                push_log(f"⚠️ [退选异常] {str(e)} (立即开始抢选新课...)", "warn")
+                drop_name = drop_c.get("name") if drop_c else drop_id
+                push_log(f"❌ [退选异常] 课程 [{drop_name}] 退选异常！错误: {str(e)} (立即开始抢选新课...)", "error")
             
             push_log(f"🚀 [换课抢选开始] 正在抢选目标 {grab_c['name']}...", "success")
             grabbing_loop([grab_c], interval=interval)
@@ -1558,6 +1560,7 @@ def api_start():
         swap_drops.append({
             "dropId": drop_id,
             "dropCourse": drop_c,
+            "dropName": drop_c.get("name") if drop_c else drop_id,
             "batchCode": (drop_c.get("electiveBatchCode") if drop_c else None) or STATE.get("electiveBatchCode", "")
         })
         
@@ -1638,18 +1641,20 @@ def api_start():
                 res_q = queue.Queue()
                 STATE["cmd_queue"].put((js_code, res_q))
                 try:
+                    drop_name = sd.get("dropName", drop_id)
                     res = res_q.get(timeout=6)
                     if res and str(res.get("code")) == "1":
-                        push_log(f"✅ [退选成功] 课程 {drop_id} 已退选！", "success")
+                        push_log(f"✅ [退选成功] 课程 [{drop_name}] 已成功退选！", "success")
                         if drop_id in STATE.setdefault("true_grabbed_ids", set()):
                             STATE["true_grabbed_ids"].remove(drop_id)
                         if drop_c:
                             drop_c["selected"] = False
                     else:
                         msg = res.get("msg", "未知原因") if res else "无响应"
-                        push_log(f"⚠️ [退选返回] {msg} (不管退选是否成功，立即开始抢课...)", "warn")
+                        push_log(f"❌ [退选失败] 课程 [{drop_name}] 退选失败！原因: {msg} (不管退选是否成功，立即开始抢课...)", "error")
                 except Exception as e:
-                    push_log(f"⚠️ [退选异常] {str(e)} (立即开始抢选新课...)", "warn")
+                    drop_name = sd.get("dropName", drop_id)
+                    push_log(f"❌ [退选异常] 课程 [{drop_name}] 退选异常！错误: {str(e)} (立即开始抢选新课...)", "error")
         
         # 2. 执行常规抢课（不需要等待，直接启动）
         if not STATE["stop_event"].is_set():
