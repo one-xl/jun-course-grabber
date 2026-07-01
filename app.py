@@ -301,19 +301,11 @@ def run_playwright_login():
                                     if m and float(m.group(0)) > 0:
                                         realMax = max(realMax, float(m.group(0)))
                                 
-                                sel_texts = f.evaluate('Array.from(document.querySelectorAll(".selected-credit-value, .selected-credit-value-fx")).map(el => el.textContent)')
-                                for text in sel_texts:
-                                    import re
-                                    m = re.search(r'[\d\.]+', text)
-                                    if m and float(m.group(0)) >= 0:
-                                        realSel = max(realSel, float(m.group(0)))
                             except Exception:
                                 pass
                                 
                         if realMax > 0:
                             STATE["max_credit"] = realMax
-                        if realSel > 0 and not STATE.get("credits_locked", False):
-                            STATE["selected_credit"] = realSel
 
                         # 处理捕获到的 Responses (提取课程列表)
                         responses = p.evaluate("window._capturedResponses || []")
@@ -369,13 +361,15 @@ def run_playwright_login():
                                                 cid = str(tc.get("teachingClassID", tc.get("teachingClassId", c.get("teachingClassId", c.get("id", "")))))
                                                 if not cid: continue
                                                 
-                                                # Check both c and tc for selected status
-                                                def is_truthy(val):
-                                                    return str(val).lower() in ["true", "1"]
-                                                is_selected = is_truthy(c.get("selected")) or is_truthy(tc.get("selected")) or is_truthy(c.get("hasSelect")) or is_truthy(tc.get("hasSelect"))
-                                                if "courseresult" in resp_url.lower() or "course_result" in resp_url.lower() or "teachingtime" in resp_url.lower():
+                                                # Use courseResult as the absolute source of truth
+                                                is_result_endpoint = "courseresult" in resp_url.lower() or "course_result" in resp_url.lower() or "teachingtime" in resp_url.lower()
+                                                
+                                                if is_result_endpoint:
+                                                    STATE.setdefault("true_grabbed_ids", set()).add(cid)
                                                     is_selected = True
-                                                    
+                                                else:
+                                                    is_selected = cid in STATE.get("true_grabbed_ids", set())
+
                                                 course_data = {
                                                     "id": cid,
                                                     "courseCode": str(c.get("courseNumber", c.get("courseCode", c.get("courseId", "")))),
@@ -387,8 +381,24 @@ def run_playwright_login():
                                                     "teachingClassType": inferred_class_type,
                                                     "selected": is_selected,
                                                     "isConflict": str(c.get("isConflict", tc.get("isConflict", "0"))),
-                                                    "conflictDesc": str(c.get("conflictDesc", tc.get("conflictDesc", "")))
+                                                    "conflictDesc": str(c.get("conflictDesc", tc.get("conflictDesc", ""))),
+                                                    "engCourseTypeName": str(c.get("engCourseTypeName", tc.get("engCourseTypeName", "")))
                                                 }
+                                                # Auto-correct class type based on engCourseTypeName
+                                                eng_type = course_data.get("engCourseTypeName", "")
+                                                if eng_type == "通识教育选修课":
+                                                    course_data["teachingClassType"] = "XGXK"
+                                                elif eng_type == "专业必修课":
+                                                    course_data["teachingClassType"] = "QXKC"
+                                                else:
+                                                    # Fallback keyword matching
+                                                    c_type_name = course_data["type"]
+                                                    if not any(k in c_type_name for k in ["必修", "体育", "基础", "限选", "专业"]):
+                                                        if "通识" in c_type_name or "通选" in c_type_name:
+                                                            course_data["teachingClassType"] = "XGXK"
+                                                        elif any(k in c_type_name for k in ["全校", "公共", "公选", "任意选修", "自由选修", "校选"]):
+                                                            course_data["teachingClassType"] = "QXKC"
+
                                                 exist_c = next((x for x in STATE["captured_courses"] if x["id"] == course_data["id"]), None)
                                                 if not exist_c:
                                                     # 拒绝自动将全校课程批量并入待抢列表，除非用户手动添加
@@ -397,12 +407,16 @@ def run_playwright_login():
                                                         new_count += 1
                                                 else:
                                                     # 同步最新状态
-                                                    if course_data["selected"] and not exist_c.get("selected", False):
-                                                        exist_c["selected"] = True
-                                                        # 如果引擎正在抢这门课，立刻宣布胜利
-                                                        if STATE.get("is_grabbing") and any(t["id"] == exist_c["id"] for t in STATE["selected_targets"]):
-                                                            push_log(f"🎉 [{exist_c['name']}] 后台状态同步：确认已选上！！！", "success")
-                                                            push_log(f"[ACTION:SUCCESS_COURSE:{exist_c['id']}]", "info")
+                                                    exist_c["teachingClassType"] = course_data["teachingClassType"]
+                                                    exist_c["type"] = course_data["type"]
+                                                    exist_c["engCourseTypeName"] = course_data.get("engCourseTypeName", "")
+                                                    if course_data["selected"] != exist_c.get("selected", False):
+                                                        exist_c["selected"] = course_data["selected"]
+                                                        if course_data["selected"]:
+                                                            # 如果引擎正在抢这门课，立刻宣布胜利
+                                                            if STATE.get("is_grabbing") and any(t["id"] == exist_c["id"] for t in STATE["selected_targets"]):
+                                                                push_log(f"[成功] [{exist_c['name']}] 后台状态同步：确认已选上！！！", "success")
+                                                                push_log(f"[ACTION:SUCCESS_COURSE:{exist_c['id']}]", "info")
                                 except ValueError:
                                     # 不是 JSON，可能是 HTML 页面
                                     import re
@@ -969,6 +983,12 @@ def _grabbing_loop_impl(targets, interval, schedule_time=0):
                     consecutive_errors = 0
                     
                     try:
+                        STATE.setdefault("true_grabbed_ids", set()).add(t_id)
+                        # Also update the corresponding course in captured_courses
+                        for course in STATE["captured_courses"]:
+                            if course["id"] == t_id:
+                                course["selected"] = True
+                        
                         c_credit = float(next((t["credit"] for t in targets if t["id"] == t_id), 0))
                         STATE["selected_credit"] = STATE.get("selected_credit", 0) + c_credit
                         STATE["credits_locked"] = True # 锁定，防止前端还没刷新就被覆盖
@@ -1155,7 +1175,8 @@ def api_status():
         "studentCode": STATE["studentCode"],
         "courses_count": len(STATE["captured_courses"]),
         "max_credit": STATE.get("max_credit", 0),
-        "selected_credit": STATE.get("selected_credit", 0)
+        "selected_credit": STATE.get("selected_credit", 0),
+        "true_grabbed_ids": list(STATE.get("true_grabbed_ids", set()))
     })
 
 @app.route("/api/online_users")

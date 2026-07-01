@@ -558,6 +558,7 @@
                 <div style="margin-top: 15px; margin-bottom: 10px; display: flex; gap: 10px;">
                     <button id="tab-btn-fankc" class="btn" style="background: var(--accent-blue); color: var(--bg-color); padding: 6px 15px; font-size: 0.85rem;" onclick="switchCourseTab('FANKC')">专业/方案内课程</button>
                     <button id="tab-btn-xgxk" class="btn" style="padding: 6px 15px; font-size: 0.85rem;" onclick="switchCourseTab('XGXK')">通识/全校选修课</button>
+                    <button id="tab-btn-cart" class="btn" style="padding: 6px 15px; font-size: 0.85rem; border-color: var(--warn); color: var(--warn);" onclick="switchCourseTab('CART')">🛒 已选与待抢 (购物车)</button>
                 </div>
                 <div class="table-container">
                     <table>
@@ -887,15 +888,8 @@
                 
                 if (!selectedCourseIds.has(teachingClassId)) {
                     if (globalMaxCredit > 0) {
-                        let grabbedCreditSum = 0;
                         let pendingCreditSum = 0;
                         let processedPendingGroups = new Set();
-                        allCourses.forEach(c => {
-                            const cred = parseFloat(c.credit || 0);
-                            if (grabbedCourseIds.has(c.id)) {
-                                grabbedCreditSum += cred;
-                            }
-                        });
                         allCourses.forEach(c => {
                             const cred = parseFloat(c.credit || 0);
                             if (!grabbedCourseIds.has(c.id) && selectedCourseIds.has(c.id)) {
@@ -910,14 +904,15 @@
                         const newUniqueKey = `${existing.courseCode || existing.name}_${existing.teacher}`;
                         let courseCredit = parseFloat(existing.credit || 0);
                         if (processedPendingGroups.has(newUniqueKey)) {
-                            // If we already have this course in pending list, adding it won't increase projected credits
                             courseCredit = 0;
                         }
                         
-                        const realGrabbed = Math.max(globalSelectedCredit, grabbedCreditSum);
+                        const realGrabbed = globalSelectedCredit;
                         if (realGrabbed + pendingCreditSum + courseCredit > globalMaxCredit) {
-                            alert(`❌ 学分超出上限！\n最大可用学分: ${globalMaxCredit}\n系统已下车: ${realGrabbed}\n其它待抢中: ${pendingCreditSum}\n该课程学分: ${courseCredit}\n\n你无法再勾选此课程加入抢课队列。`);
-                            return;
+                            const proceed = confirm(`⚠️ 提示：跨类别选课可能导致学分显示不准确\n\n当前类别（或总计）检测到学分可能超出上限：\n最大可用学分: ${globalMaxCredit}\n系统已下车: ${realGrabbed}\n其它待抢中: ${pendingCreditSum}\n该课程学分: ${courseCredit}\n\n是否忽略此警告并强制加入抢课队列？`);
+                            if (!proceed) {
+                                return;
+                            }
                         }
                     }
                     selectedCourseIds.add(teachingClassId);
@@ -939,31 +934,31 @@
                 courseCode: "", // We might not have course code in manual entry, but it's ok
                 name: courseName,
                 type: displayType, // UI展示用
-                teachingClassType: targetClassType, // 后端提交抢课用的真实类型 (必须是QXKC)
+                teachingClassType: targetClassType, // 后端提交抢课用的真实类型 (必须 be QXKC)
                 uiTab: targetUiTab, // 决定它出现在哪个 UI 标签页
                 electiveBatchCode: batchCode || "", // 专属于这门课的轮次批次号
                 credit: credit || "?",
                 time: time || "未知",
                 teacher: teacher || "未知"
             };
+            standardizeCourse(courseObj);
             
             if (globalMaxCredit > 0) {
-                let grabbedCreditSum = 0;
                 let pendingCreditSum = 0;
                 allCourses.forEach(c => {
                     const cred = parseFloat(c.credit || 0);
-                    if (grabbedCourseIds.has(c.id)) {
-                        grabbedCreditSum += cred;
-                    } else if (selectedCourseIds.has(c.id)) {
+                    if (!grabbedCourseIds.has(c.id) && selectedCourseIds.has(c.id)) {
                         pendingCreditSum += cred;
                     }
                 });
-                const realGrabbed = Math.max(globalSelectedCredit, grabbedCreditSum);
+                const realGrabbed = globalSelectedCredit;
                 
                 const courseCredit = parseFloat(credit || 0);
                 if (realGrabbed + pendingCreditSum + courseCredit > globalMaxCredit) {
-                    alert(`❌ 学分超出上限！\n最大可用学分: ${globalMaxCredit}\n系统已下车: ${realGrabbed}\n其它待抢中: ${pendingCreditSum}\n该课程学分: ${courseCredit}\n\n总计已达到界限，无法再勾选！`);
-                    return;
+                    const proceed = confirm(`⚠️ 提示：跨类别选课可能导致学分显示不准确\n\n当前类别（或总计）检测到学分可能超出上限：\n最大可用学分: ${globalMaxCredit}\n系统已下车: ${realGrabbed}\n其它待抢中: ${pendingCreditSum}\n该课程学分: ${courseCredit}\n\n是否忽略此警告并强制加入抢课队列？`);
+                    if (!proceed) {
+                        return;
+                    }
                 }
             }
             
@@ -1048,6 +1043,29 @@
             }
         }
 
+        // 自动标准化课程类别（防止学校API标记偏差导致发包错误）
+        function standardizeCourse(c) {
+            if (!c) return;
+            const engType = c.engCourseTypeName || '';
+            if (engType === '通识教育选修课') {
+                c.teachingClassType = 'XGXK';
+                return;
+            } else if (engType === '专业必修课') {
+                c.teachingClassType = 'QXKC';
+                return;
+            }
+            
+            if (!c.type) return;
+            const t = c.type;
+            if (t.includes('必修') || t.includes('体育') || t.includes('基础') || t.includes('限选') || t.includes('专业')) return;
+            
+            if (t.includes('通识') || t.includes('通选')) {
+                c.teachingClassType = 'XGXK';
+            } else if (t.includes('全校') || t.includes('公共') || t.includes('公选') || t.includes('任意选修') || t.includes('自由选修') || t.includes('校选')) {
+                c.teachingClassType = 'QXKC';
+            }
+        }
+
         // =====================================
         async function loadTargets() {
             try {
@@ -1058,6 +1076,7 @@
                     if (saved.allCourses) {
                         allCourses = saved.allCourses;
                         allCourses.forEach(c => {
+                            standardizeCourse(c);
                             const checkSelected = (val) => String(val).toLowerCase() === "true" || String(val) === "1";
                             if (checkSelected(c.selected)) {
                                 grabbedCourseIds.add(c.id);
@@ -1136,6 +1155,7 @@
                 credit: "?",
                 time: "未知"
             };
+            standardizeCourse(courseObj);
             
             allCourses.push(courseObj);
             selectedCourseIds.add(id);
@@ -1282,6 +1302,37 @@
                 
                 globalMaxCredit = data.max_credit || 0;
                 globalSelectedCredit = data.selected_credit || 0;
+                
+                if (data.true_grabbed_ids) {
+                    const newGrabbed = new Set(data.true_grabbed_ids.map(String));
+                    let changed = false;
+                    
+                    if (newGrabbed.size !== grabbedCourseIds.size) {
+                        changed = true;
+                    } else {
+                        for (let id of newGrabbed) {
+                            if (!grabbedCourseIds.has(id)) {
+                                changed = true;
+                                break;
+                            }
+                        }
+                    }
+                    
+                    if (changed) {
+                        grabbedCourseIds = newGrabbed;
+                        
+                        allCourses.forEach(c => {
+                            const shouldBeSelected = grabbedCourseIds.has(String(c.id));
+                            if (c.selected !== shouldBeSelected) {
+                                c.selected = shouldBeSelected;
+                            }
+                        });
+                        
+                        saveTargets();
+                        renderCourses();
+                    }
+                }
+                
                 updateCreditDisplay();
                 
                 // 拉取候补状态
@@ -1316,24 +1367,10 @@
         function updateCreditDisplay() {
             if (globalMaxCredit <= 0) return;
             
-            let grabbedCreditSum = 0;
             let pendingCreditSum = 0;
             
             // 使用 (课程号-老师名字) 或 (课程名-老师名字) 来进行学分去重，避免将多个备选同门课程学分累加
             let processedPendingGroups = new Set();
-            let processedGrabbedGroups = new Set();
-            
-            allCourses.forEach(c => {
-                const cred = parseFloat(c.credit || 0);
-                if (grabbedCourseIds.has(c.id)) {
-                    // 已选上的课，根据课程号去重，防止搜索时同一门课多个班都带有hasSelect=true导致重复计算
-                    const uniqueKey = c.courseCode || c.name;
-                    if (!processedGrabbedGroups.has(uniqueKey)) {
-                        processedGrabbedGroups.add(uniqueKey);
-                        grabbedCreditSum += cred;
-                    }
-                }
-            });
             
             allCourses.forEach(c => {
                 const cred = parseFloat(c.credit || 0);
@@ -1349,8 +1386,7 @@
                 }
             });
             
-            // 系统提取的已选学分可能不包含必修课或者由于跨多标签页导致读取不全，取最大值作为真实已下车学分
-            const realGrabbed = Math.max(globalSelectedCredit, grabbedCreditSum);
+            const realGrabbed = globalSelectedCredit;
             const totalProjected = realGrabbed + pendingCreditSum;
             const remain = (globalMaxCredit - totalProjected).toFixed(1);
             
@@ -1392,12 +1428,11 @@
                             const cid = tc.teachingClassID || tc.teachingClassId || nc.teachingClassId || nc.id;
                             if (!cid) return;
                             
-                            const checkSelected = (val) => String(val).toLowerCase() === "true" || String(val) === "1";
-                            const isSelected = checkSelected(nc.selected) || checkSelected(tc.selected) || checkSelected(nc.hasSelect) || checkSelected(tc.hasSelect);
+                            const isSelected = grabbedCourseIds.has(String(cid));
                             const existing = allCourses.find(c => c.id === cid);
                             
                             if (!existing) {
-                                allCourses.push({
+                                const newCourse = {
                                     id: cid,
                                     courseCode: String(nc.courseNumber || nc.courseCode || nc.courseId || ""),
                                     name: nc.courseName || nc.departmentName || "未知课程",
@@ -1406,29 +1441,36 @@
                                     credit: nc.courseCredit || nc.credit || "",
                                     time: tc.teachingPlace || tc.classTime || nc.classTime || "未知",
                                     teacher: tc.teacherName || tc.engTeacherNameList || nc.engTeacherNameList || "未知",
-                                    selected: isSelected
-                                });
+                                    selected: isSelected,
+                                    engCourseTypeName: nc.engCourseTypeName || tc.engCourseTypeName || ""
+                                };
+                                standardizeCourse(newCourse);
+                                allCourses.push(newCourse);
                                 
                                 if (isSelected) {
                                     grabbedCourseIds.add(cid);
                                 }
                                 addedCount++;
-                                } else {
-                                    // 自动更新底层数据和展示信息
+                            } else {
+                                    // 自动更新底层数据 and 展示信息
                                     existing.credit = nc.courseCredit || nc.credit || existing.credit;
                                     existing.time = tc.teachingPlace || tc.classTime || nc.classTime || existing.time;
                                     existing.teacher = tc.teacherName || tc.engTeacherNameList || nc.engTeacherNameList || existing.teacher;
+                                    existing.engCourseTypeName = nc.engCourseTypeName || tc.engCourseTypeName || existing.engCourseTypeName || "";
                                     // 注意：如果是通过全校搜索来的，可能会带有一个专有的 electiveBatchCode
                                     if (nc.electiveBatchCode || tc.electiveBatchCode) {
                                         existing.electiveBatchCode = nc.electiveBatchCode || tc.electiveBatchCode;
                                     }
                                     
-                                    if (isSelected) {
-                                        if (!existing.selected) {
-                                            addedCount++;
+                                    standardizeCourse(existing);
+                                    if (existing.selected !== isSelected) {
+                                        existing.selected = isSelected;
+                                        addedCount++;
+                                        if (isSelected) {
+                                            grabbedCourseIds.add(cid);
+                                        } else {
+                                            grabbedCourseIds.delete(cid);
                                         }
-                                        existing.selected = true;
-                                        grabbedCourseIds.add(cid);
                                     }
                                 }
                         });
@@ -1457,23 +1499,26 @@
                     const newCourses = data.courses;
                     let added = false;
                     newCourses.forEach(nc => {
+                        standardizeCourse(nc);
                         const existing = allCourses.find(c => c.id === nc.id);
                         if (!existing) {
                             allCourses.push(nc);
                             added = true;
                         } else {
-                            if (nc.selected && !existing.selected) {
-                                existing.selected = true;
+                            standardizeCourse(existing);
+                            if (nc.selected !== existing.selected) {
+                                existing.selected = nc.selected;
                                 added = true;
                             }
                         }
                     });
 
-                    // 始终确保选中的课程加入 grabbedCourseIds
                     allCourses.forEach(c => {
                         const checkSelected = (val) => String(val).toLowerCase() === "true" || String(val) === "1";
                         if (checkSelected(c.selected)) {
                             grabbedCourseIds.add(c.id);
+                        } else {
+                            grabbedCourseIds.delete(c.id);
                         }
                     });
 
@@ -1492,27 +1537,33 @@
         function toggleCourseSelection(id, checked, checkboxElem) {
             if (checked) {
                 if (globalMaxCredit > 0) {
-                    let grabbedCreditSum = 0;
                     let pendingCreditSum = 0;
+                    let processedPendingGroups = new Set();
+
                     allCourses.forEach(c => {
                         const cred = parseFloat(c.credit || 0);
-                        if (grabbedCourseIds.has(c.id)) {
-                            grabbedCreditSum += cred;
-                        } else if (selectedCourseIds.has(c.id) && c.id !== id) {
-                            pendingCreditSum += cred;
+                        if (!grabbedCourseIds.has(c.id) && selectedCourseIds.has(c.id) && c.id !== id) {
+                            const uniqueKey = `${c.courseCode || c.name}_${c.teacher}`;
+                            if (!processedPendingGroups.has(uniqueKey)) {
+                                processedPendingGroups.add(uniqueKey);
+                                pendingCreditSum += cred;
+                            }
                         }
                     });
-                    const realGrabbed = Math.max(globalSelectedCredit, grabbedCreditSum);
+
+                    const realGrabbed = globalSelectedCredit;
                     
                     const courseInfo = allCourses.find(c => c.id === id);
                     const courseCredit = courseInfo ? parseFloat(courseInfo.credit || 0) : 0;
                     
                     if (realGrabbed + pendingCreditSum + courseCredit > globalMaxCredit) {
-                        alert(`❌ 学分超出上限！\n最大可用学分: ${globalMaxCredit}\n系统已下车: ${realGrabbed}\n其它待抢中: ${pendingCreditSum}\n该课程学分: ${courseCredit}\n\n总计已达到界限，无法再勾选！`);
-                        if (checkboxElem) {
-                            checkboxElem.checked = false; // 撤销勾选
+                        const proceed = confirm(`⚠️ 提示：跨类别选课可能导致学分显示不准确\n\n当前类别（或总计）检测到学分可能超出上限：\n最大可用学分: ${globalMaxCredit}\n系统已下车: ${realGrabbed}\n其它待抢中: ${pendingCreditSum}\n该课程学分: ${courseCredit}\n\n注意：如果您正在跨类别选课（例如方案内课程 vs 全校课程），各个类别的学分上限可能独立计算。是否忽略此警告并强制勾选？`);
+                        if (!proceed) {
+                            if (checkboxElem) {
+                                checkboxElem.checked = false; // 撤销勾选
+                            }
+                            return; // 中断操作
                         }
-                        return; // 中断操作
                     }
                 }
                 selectedCourseIds.add(id);
@@ -1553,6 +1604,8 @@
             document.getElementById('tab-btn-fankc').style.color = tab === 'FANKC' ? 'var(--bg-color)' : 'var(--accent-blue)';
             document.getElementById('tab-btn-xgxk').style.background = tab === 'XGXK' ? 'var(--accent-blue)' : 'transparent';
             document.getElementById('tab-btn-xgxk').style.color = tab === 'XGXK' ? 'var(--bg-color)' : 'var(--accent-blue)';
+            document.getElementById('tab-btn-cart').style.background = tab === 'CART' ? 'var(--warn)' : 'transparent';
+            document.getElementById('tab-btn-cart').style.color = tab === 'CART' ? 'var(--bg-color)' : 'var(--warn)';
             renderCourses();
         }
 
@@ -1561,12 +1614,21 @@
             tbody.innerHTML = '';
             
             let filteredCourses = allCourses.filter(c => {
+                if (currentCourseTab === 'CART') {
+                    return grabbedCourseIds.has(c.id) || selectedCourseIds.has(c.id);
+                }
+
                 if (c.uiTab) {
                     return currentCourseTab === c.uiTab;
                 }
                 
                 const isGeneral = c.teachingClassType === 'XGXK' || c.teachingClassType === 'QXKC' || 
-                    (c.type && (c.type.includes('通识') || c.type.includes('通选') || c.type.includes('全校')));
+                    (c.type && (c.type.includes('通识') || c.type.includes('通选') || c.type.includes('全校') || 
+                               c.type.includes('公共') || c.type.includes('公选') || c.type.includes('任意选修') || 
+                               c.type.includes('自由选修') || c.type.includes('校选')) && 
+                               !c.type.includes('必修') && !c.type.includes('体育') && 
+                               !c.type.includes('基础') && !c.type.includes('限选') && 
+                               !c.type.includes('专业'));
                 
                 if (currentCourseTab === 'XGXK') {
                     return isGeneral;
@@ -1574,6 +1636,7 @@
                     return !isGeneral;
                 }
             });
+
 
             if (filteredCourses.length === 0) {
                 tbody.innerHTML = `<tr><td colspan="8" style="text-align: center; color: #666;">当前分类下无数据，请尝试切换上方分类或在系统内点击相应的课表重新捕获。</td></tr>`;
