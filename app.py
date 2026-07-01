@@ -466,8 +466,19 @@ def run_playwright_login():
                     except Exception as e:
                         pass
 
-                # 记录页面对象以供引擎发包
-                if len(context.pages) > 0:
+                # 寻找真实的 JNU 选课页面
+                jnu_page = None
+                for p in context.pages:
+                    try:
+                        if not p.is_closed() and "jwxk.jnu.edu.cn" in p.url:
+                            jnu_page = p
+                            break
+                    except Exception:
+                        pass
+                
+                if jnu_page:
+                    STATE["playwright_page"] = jnu_page
+                elif len(context.pages) > 0:
                     STATE["playwright_page"] = context.pages[0]
 
                 # 不断尝试从拦截日志或者浏览器环境获取关键信息记录缺少的数据
@@ -1242,16 +1253,14 @@ def api_drop_course():
         target_url = f"https://jwxk.jnu.edu.cn/xsxkapp/sys/xsxkapp/elective/deleteVolunteer.do?timestamp={timestamp}&deleteParam={encoded_param}"
         
         js_code = f"""
-        () => {{
-            return fetch("{target_url}", {{
-                method: "GET",
-                headers: {{
-                    "X-Requested-With": "XMLHttpRequest",
-                    "token": window._jnuToken || "{STATE.get('token', '')}"
-                }},
-                __isGrabber: true
-            }}).then(res => res.json()).catch(err => ({{ code: "-1", msg: err.toString() }}));
-        }}
+        fetch("{target_url}", {{
+            method: "GET",
+            headers: {{
+                "X-Requested-With": "XMLHttpRequest",
+                "token": window._jnuToken || "{STATE.get('token', '')}"
+            }},
+            __isGrabber: true
+        }}).then(res => res.json()).catch(err => ({{ code: "-1", msg: err.toString() }}))
         """
         
         res_q = queue.Queue()
@@ -1339,16 +1348,14 @@ def api_execute_swap_task():
             target_url = f"https://jwxk.jnu.edu.cn/xsxkapp/sys/xsxkapp/elective/deleteVolunteer.do?timestamp={timestamp}&deleteParam={encoded_param}"
             
             js_code = f"""
-            () => {{
-                return fetch("{target_url}", {{
-                    method: "GET",
-                    headers: {{
-                        "X-Requested-With": "XMLHttpRequest",
-                        "token": window._jnuToken || "{STATE.get('token', '')}"
-                    }},
-                    __isGrabber: true
-                }}).then(res => res.json()).catch(err => ({{ code: "-1", msg: err.toString() }}));
-            }}
+            fetch("{target_url}", {{
+                method: "GET",
+                headers: {{
+                    "X-Requested-With": "XMLHttpRequest",
+                    "token": window._jnuToken || "{STATE.get('token', '')}"
+                }},
+                __isGrabber: true
+            }}).then(res => res.json()).catch(err => ({{ code: "-1", msg: err.toString() }}))
             """
             res_q = queue.Queue()
             STATE["cmd_queue"].put((js_code, res_q))
