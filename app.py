@@ -344,6 +344,15 @@ def run_playwright_login():
                                 try:
                                     body = json.loads(resp_str)
                                     courses = body.get("dataList", body.get("rows", body.get("data", [])))
+                                    
+                                    if "courseresult.do" in resp_url.lower() and isinstance(courses, list):
+                                        try:
+                                            total_cred = sum(float(str(c.get("credit", c.get("courseCredit", "0")))) for c in courses if isinstance(c, dict))
+                                            if total_cred > 0:
+                                                STATE["selected_credit"] = total_cred
+                                        except Exception:
+                                            pass
+                                            
                                     if isinstance(courses, list):
                                         for c in courses:
                                             tc_list = c.get("tcList", [])
@@ -363,7 +372,7 @@ def run_playwright_login():
                                                     
                                                 course_data = {
                                                     "id": cid,
-                                                    "courseCode": str(c.get("courseCode", c.get("courseId", ""))),
+                                                    "courseCode": str(c.get("courseNumber", c.get("courseCode", c.get("courseId", "")))),
                                                     "name": str(c.get("courseName", c.get("departmentName", "未知课程"))),
                                                     "teacher": str(tc.get("teacherName", tc.get("engTeacherNameList", c.get("engTeacherNameList", "未知")))),
                                                     "time": str(tc.get("teachingPlace", tc.get("classTime", c.get("classTime", "未知时间")))),
@@ -737,7 +746,7 @@ def send_heartbeat():
         pass
 
 def try_silent_keepalive():
-    """静默保活：定时拉取已选课表 (teachingTime.do)，既维持 Session，又能将已选状态同步给前端"""
+    """静默保活：定时拉取已选课表 (courseResult.do)，既维持 Session，又能将已选状态和学分同步给前端"""
     js_code = f"""
     () => {{
         const sc = "{STATE.get('studentCode', '')}";
@@ -745,7 +754,7 @@ def try_silent_keepalive():
         const token = window._jnuToken || "{STATE.get('token', '')}";
         if (!sc || !batch || !token) return 0;
         
-        const url = `{BASE_URL}/xsxkapp/sys/xsxkapp/elective/teachingTime.do?timestamp=${{Date.now()}}&studentCode=${{sc}}&electiveBatchCode=${{batch}}`;
+        const url = `{BASE_URL}/xsxkapp/sys/xsxkapp/elective/courseResult.do?timestamp=${{Date.now()}}&studentCode=${{sc}}&electiveBatchCode=${{batch}}`;
         return fetch(url, {{
             method: "GET",
             headers: {{

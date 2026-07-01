@@ -1373,7 +1373,7 @@
                             if (!existing) {
                                 allCourses.push({
                                     id: cid,
-                                    courseCode: String(nc.courseCode || nc.courseId || ""),
+                                    courseCode: String(nc.courseNumber || nc.courseCode || nc.courseId || ""),
                                     name: nc.courseName || nc.departmentName || "未知课程",
                                     type: nc.courseTypeName || nc.courseNatureName || nc.typeName || (courseType === "FANKC" ? "方案内" : "推荐"),
                                     teachingClassType: courseType,
