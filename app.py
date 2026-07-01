@@ -363,6 +363,7 @@ def run_playwright_login():
                                                     
                                                 course_data = {
                                                     "id": cid,
+                                                    "courseCode": str(c.get("courseCode", c.get("courseId", ""))),
                                                     "name": str(c.get("courseName", c.get("departmentName", "未知课程"))),
                                                     "teacher": str(tc.get("teacherName", tc.get("engTeacherNameList", c.get("engTeacherNameList", "未知")))),
                                                     "time": str(tc.get("teachingPlace", tc.get("classTime", c.get("classTime", "未知时间")))),

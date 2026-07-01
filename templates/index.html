@@ -866,16 +866,32 @@
                     if (globalMaxCredit > 0) {
                         let grabbedCreditSum = 0;
                         let pendingCreditSum = 0;
+                        let processedPendingGroups = new Set();
                         allCourses.forEach(c => {
                             const cred = parseFloat(c.credit || 0);
                             if (grabbedCourseIds.has(c.id)) {
                                 grabbedCreditSum += cred;
-                            } else if (selectedCourseIds.has(c.id)) {
-                                pendingCreditSum += cred;
                             }
                         });
+                        allCourses.forEach(c => {
+                            const cred = parseFloat(c.credit || 0);
+                            if (!grabbedCourseIds.has(c.id) && selectedCourseIds.has(c.id)) {
+                                const uniqueKey = `${c.courseCode || c.name}_${c.teacher}`;
+                                if (!processedPendingGroups.has(uniqueKey)) {
+                                    processedPendingGroups.add(uniqueKey);
+                                    pendingCreditSum += cred;
+                                }
+                            }
+                        });
+                        
+                        const newUniqueKey = `${existing.courseCode || existing.name}_${existing.teacher}`;
+                        let courseCredit = parseFloat(existing.credit || 0);
+                        if (processedPendingGroups.has(newUniqueKey)) {
+                            // If we already have this course in pending list, adding it won't increase projected credits
+                            courseCredit = 0;
+                        }
+                        
                         const realGrabbed = Math.max(globalSelectedCredit, grabbedCreditSum);
-                        const courseCredit = parseFloat(existing.credit || 0);
                         if (realGrabbed + pendingCreditSum + courseCredit > globalMaxCredit) {
                             alert(`❌ 学分超出上限！\n最大可用学分: ${globalMaxCredit}\n系统已下车: ${realGrabbed}\n其它待抢中: ${pendingCreditSum}\n该课程学分: ${courseCredit}\n\n你无法再勾选此课程加入抢课队列。`);
                             return;
@@ -897,6 +913,7 @@
             
             const courseObj = {
                 id: teachingClassId,
+                courseCode: "", // We might not have course code in manual entry, but it's ok
                 name: courseName,
                 type: displayType, // UI展示用
                 teachingClassType: targetClassType, // 后端提交抢课用的真实类型 (必须是QXKC)
@@ -1089,6 +1106,7 @@
             const typeNameMap = { "QXKC": "全校选修", "FANKC": "方案内选修", "TJKC": "推荐选修", "XGXK": "通识选修" };
             const courseObj = {
                 id: id,
+                courseCode: "",
                 name: name,
                 type: typeNameMap[type] + "(盲狙)", 
                 teachingClassType: type,
@@ -1278,12 +1296,30 @@
             let grabbedCreditSum = 0;
             let pendingCreditSum = 0;
             
+            // 使用 (课程号-老师名字) 或 (课程名-老师名字) 来进行学分去重，避免将多个备选同门课程学分累加
+            let processedPendingGroups = new Set();
+            
             allCourses.forEach(c => {
                 const cred = parseFloat(c.credit || 0);
                 if (grabbedCourseIds.has(c.id)) {
+                    // 已选上的课，只要ID在 grabbedCourseIds 里就算，因为教务处允许的才会算作真正已选。
+                    // 但是通常情况下如果教务处不允许重复选课，那这里的ID也是唯一的。
+                    // 也可以进行去重：
                     grabbedCreditSum += cred;
-                } else if (selectedCourseIds.has(c.id)) {
-                    pendingCreditSum += cred;
+                }
+            });
+            
+            allCourses.forEach(c => {
+                const cred = parseFloat(c.credit || 0);
+                if (!grabbedCourseIds.has(c.id) && selectedCourseIds.has(c.id)) {
+                    // 如果该课还没成功，但在待选列表中
+                    // 根据 课程号+老师名 作为唯一标识进行去重
+                    // 如果没有课程号，则退化为 课程名+老师名
+                    const uniqueKey = `${c.courseCode || c.name}_${c.teacher}`;
+                    if (!processedPendingGroups.has(uniqueKey)) {
+                        processedPendingGroups.add(uniqueKey);
+                        pendingCreditSum += cred;
+                    }
                 }
             });
             
@@ -1337,6 +1373,7 @@
                             if (!existing) {
                                 allCourses.push({
                                     id: cid,
+                                    courseCode: String(nc.courseCode || nc.courseId || ""),
                                     name: nc.courseName || nc.departmentName || "未知课程",
                                     type: nc.courseTypeName || nc.courseNatureName || nc.typeName || (courseType === "FANKC" ? "方案内" : "推荐"),
                                     teachingClassType: courseType,
