@@ -1701,12 +1701,18 @@
                 dropId: dropId,
                 dropName: dropC.name,
                 grabId: grabId,
-                grabName: grabC.name
+                grabName: grabC.name,
+                enabled: true
             });
             
             saveSwapTasks();
             document.getElementById("swap-drop-select").value = "";
             document.getElementById("swap-grab-select").value = "";
+        }
+        
+        function toggleSwapTaskEnabled(index, checked) {
+            swapTasks[index].enabled = checked;
+            saveSwapTasks();
         }
         
         function removeSwapTask(index) {
@@ -1728,8 +1734,10 @@
                 const row = document.createElement("div");
                 row.style.cssText = "display: flex; justify-content: space-between; align-items: center; background: rgba(255,255,255,0.03); border: 1px solid #333; padding: 10px 15px; border-radius: 6px; margin-top: 6px;";
                 
+                const isEnabled = task.enabled !== false;
                 row.innerHTML = `
                     <div style="display: flex; align-items: center; gap: 10px; font-size: 0.9rem;">
+                        <input type="checkbox" style="margin-right: 6px; cursor: pointer;" ${isEnabled ? 'checked' : ''} onchange="toggleSwapTaskEnabled(${index}, this.checked)">
                         <span style="color: var(--danger); font-weight: bold;">退选:</span>
                         <span style="color: #fff; font-weight: 500;">[${task.dropId}] ${task.dropName}</span>
                         <span style="color: var(--warn); font-weight: bold;">➔</span>
@@ -1737,7 +1745,7 @@
                         <span style="color: #fff; font-weight: 500;">[${task.grabId}] ${task.grabName}</span>
                     </div>
                     <div style="display: flex; gap: 8px;">
-                        <button class="btn" style="padding: 4px 12px; font-size: 0.8rem; background: var(--warn); border-color: var(--warn); color: var(--bg-color);" onclick="executeSwapTask('${task.dropId}', '${task.grabId}', '${task.dropName.replace(/'/g, "\\'")}', '${task.grabName.replace(/'/g, "\\'")}')">⚡ 立即执行换课</button>
+                        <button class="btn" style="padding: 4px 12px; font-size: 0.8rem; background: var(--warn); border-color: var(--warn); color: var(--bg-color);" onclick="executeSwapTask('${task.dropId}', '${task.grabId}', '${task.dropName.replace(/'/g, "\\'")}', '${task.grabName.replace(/'/g, "\\'")}')">⚡ 立即单组执行</button>
                         <button class="btn btn-danger" style="padding: 4px 12px; font-size: 0.8rem;" onclick="removeSwapTask(${index})">删除</button>
                     </div>
                 `;
@@ -2049,11 +2057,19 @@
                 .map(id => allCourses.find(c => c.id === id))
                 .filter(Boolean);
             
+            const activeSwaps = swapTasks.filter(t => t.enabled !== false).map(t => ({
+                dropId: t.dropId,
+                grabId: t.grabId,
+                dropCourse: allCourses.find(c => c.id === t.dropId),
+                grabCourse: allCourses.find(c => c.id === t.grabId)
+            })).filter(t => t.grabCourse);
+            
             const interval = document.getElementById('input-interval').value;
             const scheduleTimeStr = document.getElementById('input-scheduletime').value;
+            const concurrency = document.getElementById('input-concurrency').value || 3;
 
-            if (selectedCourses.length === 0) {
-                alert("请至少勾选一门待抢课程（已选/必修课不可抢）！");
+            if (selectedCourses.length === 0 && activeSwaps.length === 0) {
+                alert("请至少勾选一门待抢课程，或启用至少一个组合换课任务！");
                 return;
             }
 
@@ -2078,6 +2094,8 @@
                     headers: { 'Content-Type': 'application/json' },
                     body: JSON.stringify({ 
                         selected_courses: selectedCourses, 
+                        swap_tasks: activeSwaps,
+                        concurrency: parseInt(concurrency),
                         interval: parseFloat(interval),
                         schedule_time: scheduleTimestamp
                     })

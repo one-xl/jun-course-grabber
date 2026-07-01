@@ -1528,19 +1528,134 @@ def api_start():
     
     data = request.json
     selected_courses = data.get("selected_courses", [])
+    swap_tasks = data.get("swap_tasks", [])
     interval = float(data.get("interval", 1.0))
     schedule_time = float(data.get("schedule_time", 0.0))
     concurrency = int(data.get("concurrency", 1))
     
+    # 自动合并组合换课的任务目标
+    swap_drops = []
+    for st in swap_tasks:
+        drop_id = st.get("dropId")
+        grab_id = st.get("grabId")
+        
+        # Ensure grab target is in selected_courses
+        grab_c = st.get("grabCourse") or next((x for x in STATE["captured_courses"] if x["id"] == grab_id), None)
+        if grab_c:
+            if not any(x["id"] == grab_id for x in selected_courses):
+                selected_courses.append(grab_c)
+            exist_grab = next((x for x in STATE["captured_courses"] if x["id"] == grab_id), None)
+            if not exist_grab:
+                STATE["captured_courses"].append(grab_c)
+                
+        # 缓存退选参数
+        drop_c = st.get("dropCourse") or next((x for x in STATE["captured_courses"] if x["id"] == drop_id), None)
+        if drop_c:
+            exist_drop = next((x for x in STATE["captured_courses"] if x["id"] == drop_id), None)
+            if not exist_drop:
+                STATE["captured_courses"].append(drop_c)
+        
+        swap_drops.append({
+            "dropId": drop_id,
+            "dropCourse": drop_c,
+            "batchCode": (drop_c.get("electiveBatchCode") if drop_c else None) or STATE.get("electiveBatchCode", "")
+        })
+        
     if not selected_courses:
-        return jsonify({"success": False, "msg": "请先勾选目标课程"})
+        return jsonify({"success": False, "msg": "请先勾选目标课程或启用换课组合"})
     
     STATE["selected_targets"] = selected_courses
     STATE["concurrency"] = concurrency
     STATE["is_grabbing"] = True
     STATE["stop_event"].clear()
     
-    STATE["grab_thread"] = threading.Thread(target=grabbing_loop, args=(selected_courses, interval, schedule_time), daemon=True)
+    def run_engine():
+        # 定时等待阶段
+        if schedule_time > 0:
+            offset = STATE.get("time_offset", 0.0)
+            now_net = time.time() + offset
+            wait_seconds = schedule_time - now_net
+            
+            if wait_seconds > 0:
+                target_str = datetime.fromtimestamp(schedule_time).strftime("%Y-%m-%d %H:%M:%S")
+                push_log(f"⏰ 定时组合任务：将在 {target_str} 开始 (网络校准误差{offset*1000:.1f}ms)", "warn")
+                last_heartbeat = 0
+                while not STATE["stop_event"].is_set():
+                    current_net_time = time.time() + offset
+                    remain = schedule_time - current_net_time
+                    if remain <= 0:
+                        break
+                    
+                    if remain > 2:
+                        if time.time() - last_heartbeat > 30:
+                            try_silent_keepalive()
+                            last_heartbeat = time.time()
+                        time.sleep(0.1)
+                    else:
+                        # 临近 2 秒，高频轮询等待
+                        time.sleep(0.01)
+                        
+        if STATE["stop_event"].is_set():
+            STATE["is_grabbing"] = False
+            return
+            
+        # 1. 执行组合换课的退选
+        if swap_drops:
+            push_log(f"🔥 [开始执行组合换课] 正在依次执行 {len(swap_drops)} 个退选请求...", "warn")
+            for sd in swap_drops:
+                if STATE["stop_event"].is_set():
+                    break
+                drop_id = sd["dropId"]
+                drop_c = sd["dropCourse"]
+                drop_batch = sd["batchCode"]
+                
+                delete_param = {
+                    "data": {
+                        "operationType": "2",
+                        "studentCode": STATE["studentCode"],
+                        "electiveBatchCode": drop_batch,
+                        "teachingClassId": drop_id,
+                        "isMajor": STATE.get("isMajor", "1")
+                    }
+                }
+                import json
+                import urllib.parse
+                param_json = json.dumps(delete_param, ensure_ascii=False)
+                encoded_param = urllib.parse.quote(param_json)
+                timestamp = int(time.time() * 1000)
+                target_url = f"https://jwxk.jnu.edu.cn/xsxkapp/sys/xsxkapp/elective/deleteVolunteer.do?timestamp={timestamp}&deleteParam={encoded_param}"
+                
+                js_code = f"""
+                fetch("{target_url}", {{
+                    method: "GET",
+                    headers: {{
+                        "X-Requested-With": "XMLHttpRequest",
+                        "token": window._jnuToken || "{STATE.get('token', '')}"
+                    }},
+                    __isGrabber: true
+                }}).then(res => res.json()).catch(err => ({{ code: "-1", msg: err.toString() }}))
+                """
+                res_q = queue.Queue()
+                STATE["cmd_queue"].put((js_code, res_q))
+                try:
+                    res = res_q.get(timeout=6)
+                    if res and str(res.get("code")) == "1":
+                        push_log(f"✅ [退选成功] 课程 {drop_id} 已退选！", "success")
+                        if drop_id in STATE.setdefault("true_grabbed_ids", set()):
+                            STATE["true_grabbed_ids"].remove(drop_id)
+                        if drop_c:
+                            drop_c["selected"] = False
+                    else:
+                        msg = res.get("msg", "未知原因") if res else "无响应"
+                        push_log(f"⚠️ [退选返回] {msg} (不管退选是否成功，立即开始抢课...)", "warn")
+                except Exception as e:
+                    push_log(f"⚠️ [退选异常] {str(e)} (立即开始抢选新课...)", "warn")
+        
+        # 2. 执行常规抢课（不需要等待，直接启动）
+        if not STATE["stop_event"].is_set():
+            grabbing_loop(selected_courses, interval, schedule_time=0.0)
+            
+    STATE["grab_thread"] = threading.Thread(target=run_engine, daemon=True)
     STATE["grab_thread"].start()
     
     return jsonify({"success": True, "msg": "启动成功"})
