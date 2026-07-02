@@ -1058,9 +1058,18 @@ def waitlist_loop():
             time.sleep(1)
             continue
             
-        for t in targets:
+        for item in targets:
             if STATE["waitlist_stop_event"].is_set():
                 break
+                
+            if isinstance(item, dict) and "course" in item:
+                t = item["course"]
+                drop_id = item.get("dropId")
+                drop_c = item.get("dropCourse")
+            else:
+                t = item
+                drop_id = None
+                drop_c = None
                 
             c_name = t.get("name", "")
             if not c_name:
@@ -1119,13 +1128,60 @@ def waitlist_loop():
                         
                         if num_selected < capacity:
                             if can_select == "1":
-                                push_log(f"🎉 [候补] 发现空缺且开放选择！[{t['name']}] 已选 {num_selected}/{capacity}，正在发起抢课并发请求！", "success")
+                                push_log(f"🎉 [候补] 发现空缺且开放选择！[{t['name']}] 已选 {num_selected}/{capacity}，正在启动执行流程...", "success")
+                                
+                                # Step 1: Drop course if configured
+                                if drop_id:
+                                    drop_name = drop_c.get("name") if drop_c else drop_id
+                                    drop_batch = (drop_c.get("electiveBatchCode") if drop_c else None) or STATE.get("electiveBatchCode", "")
+                                    push_log(f"🔥 [候补退选启动] 正在发送退选请求 [{drop_name}]...", "warn")
+                                    
+                                    delete_param = {
+                                        "data": {
+                                            "operationType": "2",
+                                            "studentCode": STATE["studentCode"],
+                                            "electiveBatchCode": drop_batch,
+                                            "teachingClassId": drop_id,
+                                            "isMajor": STATE.get("isMajor", "1")
+                                        }
+                                    }
+                                    param_json = json.dumps(delete_param, ensure_ascii=False)
+                                    encoded_param = urllib.parse.quote(param_json)
+                                    timestamp = int(time.time() * 1000)
+                                    target_url = f"https://jwxk.jnu.edu.cn/xsxkapp/sys/xsxkapp/elective/deleteVolunteer.do?timestamp={timestamp}&deleteParam={encoded_param}"
+                                    
+                                    js_drop_code = f"""
+                                    fetch("{target_url}", {{
+                                        method: "GET",
+                                        headers: {{
+                                            "X-Requested-With": "XMLHttpRequest",
+                                            "token": window._jnuToken || "{STATE.get('token', '')}"
+                                        }},
+                                        __isGrabber: true
+                                    }}).then(res => res.json()).catch(err => ({{ code: "-1", msg: err.toString() }}))
+                                    """
+                                    res_drop_q = queue.Queue()
+                                    STATE["cmd_queue"].put((js_drop_code, res_drop_q))
+                                    try:
+                                        res_drop = res_drop_q.get(timeout=6)
+                                        if res_drop and str(res_drop.get("code")) == "1":
+                                            push_log(f"✅ [候补退选成功] 课程 [{drop_name}] 已成功退选！", "success")
+                                            if drop_id in STATE.setdefault("true_grabbed_ids", set()):
+                                                STATE["true_grabbed_ids"].remove(drop_id)
+                                            if drop_c:
+                                                drop_c["selected"] = False
+                                        else:
+                                            drop_msg = res_drop.get("msg", "未知原因") if res_drop else "无响应"
+                                            push_log(f"❌ [候补退选失败] 课程 [{drop_name}] 退选失败！原因: {drop_msg} (不管退选是否成功，立即抢选候补课...)", "error")
+                                    except Exception as e:
+                                        push_log(f"❌ [候补退选异常] 课程 [{drop_name}] 退选异常！错误: {str(e)} (立即抢选候补课...)", "error")
+                                
+                                # Step 2: Grab Waitlist Course
+                                push_log(f"🚀 [候补抢课启动] 正在抢选目标 {t['name']}...", "success")
                                 send_elect_request_async(t, 1)
                             else:
-                                # 发现空缺但按钮未亮起
                                 pass
                         else:
-                            # print(f"[{t['name']}] 容量满: {num_selected}/{capacity}")
                             pass
             except Exception as e:
                 pass
@@ -1133,7 +1189,6 @@ def waitlist_loop():
             time.sleep(1) # 请求间隔，减轻服务器压力
             
         # 处理抢课结果队列 (处理可能由候补触发的响应)
-        # 如果主抢课循环在运行，它也会帮忙处理
         while not STATE["waitlist_stop_event"].is_set():
             try:
                 res_item = STATE["async_results_queue"].get_nowait()
@@ -1685,30 +1740,51 @@ def api_stream():
 @app.route("/api/waitlist/toggle", methods=["POST"])
 def api_waitlist_toggle():
     data = request.json
+    action = data.get("action")
+    
+    if action == "remove":
+        cid = data.get("id")
+        if not cid:
+            return jsonify({"success": False, "msg": "参数错误"})
+        if cid in STATE["waitlist_targets"]:
+            item = STATE["waitlist_targets"][cid]
+            c_name = item.get("course", {}).get("name", cid)
+            del STATE["waitlist_targets"][cid]
+            push_log(f"已取消 [{c_name}] 的候补", "info")
+            
+            if len(STATE["waitlist_targets"]) == 0 and STATE["waitlist_thread"]:
+                STATE["waitlist_stop_event"].set()
+                STATE["waitlist_thread"] = None
+                
+            return jsonify({"success": True, "status": "removed"})
+        return jsonify({"success": False, "msg": "该课程不在候补队列中"})
+        
+    # 默认或显式为 "add"
     course = data.get("course")
     if not course or not course.get("id"):
         return jsonify({"success": False, "msg": "参数错误"})
         
     cid = course["id"]
-    if cid in STATE["waitlist_targets"]:
-        del STATE["waitlist_targets"][cid]
-        push_log(f"已取消 [{course.get('name')}] 的候补", "info")
+    drop_id = data.get("dropId")
+    drop_course = data.get("dropCourse")
+    
+    STATE["waitlist_targets"][cid] = {
+        "course": course,
+        "dropId": drop_id,
+        "dropCourse": drop_course
+    }
+    
+    msg_str = f"已将 [{course.get('name')}] 加入候补队列"
+    if drop_id and drop_course:
+        msg_str += f"（关联退选: {drop_course.get('name')}）"
+    push_log(msg_str, "success")
+    
+    if STATE["waitlist_thread"] is None or not STATE["waitlist_thread"].is_alive():
+        STATE["waitlist_stop_event"].clear()
+        STATE["waitlist_thread"] = threading.Thread(target=waitlist_loop, daemon=True)
+        STATE["waitlist_thread"].start()
         
-        if len(STATE["waitlist_targets"]) == 0 and STATE["waitlist_thread"]:
-            STATE["waitlist_stop_event"].set()
-            STATE["waitlist_thread"] = None
-        
-        return jsonify({"success": True, "status": "removed"})
-    else:
-        STATE["waitlist_targets"][cid] = course
-        push_log(f"已将 [{course.get('name')}] 加入候补队列", "success")
-        
-        if STATE["waitlist_thread"] is None or not STATE["waitlist_thread"].is_alive():
-            STATE["waitlist_stop_event"].clear()
-            STATE["waitlist_thread"] = threading.Thread(target=waitlist_loop, daemon=True)
-            STATE["waitlist_thread"].start()
-            
-        return jsonify({"success": True, "status": "added"})
+    return jsonify({"success": True, "status": "added"})
 
 @app.route("/api/waitlist/status")
 def api_waitlist_status():

@@ -705,6 +705,35 @@
         </div>
     </div>
 
+    <!-- 候补设置弹窗 -->
+    <div id="waitlist-modal" class="floating-window" style="display: none; width: 420px; height: auto; left: 50%; top: 50%; transform: translate(-50%, -50%); z-index: 10000; box-shadow: 0 10px 30px rgba(0,0,0,0.5); resize: none;">
+        <div class="floating-header">
+            <h2>⏳ 候补抢课配置</h2>
+            <button class="btn-close" onclick="closeWaitlistModal()">✖</button>
+        </div>
+        <div class="floating-content" style="padding: 20px; background: #121212;">
+            <div style="margin-bottom: 18px;">
+                <label style="display: block; color: #888; font-size: 0.85rem; margin-bottom: 6px;">候补目标课程:</label>
+                <div id="wl-target-course-name" style="font-weight: bold; color: #fff; font-size: 1rem; background: rgba(255,255,255,0.03); padding: 8px 12px; border-radius: 4px; border: 1px solid #222;">-</div>
+            </div>
+            
+            <div style="margin-bottom: 20px;">
+                <label style="display: block; color: #888; font-size: 0.85rem; margin-bottom: 6px;">关联退选已选课程 (可选):</label>
+                <select id="wl-drop-course-select" style="width: 100%; background: #181818; color: #fff; border: 1px solid #333; border-radius: 4px; padding: 10px; font-size: 0.9rem; outline: none; cursor: pointer;">
+                    <option value="">-- 不退课，有容量直接抢 --</option>
+                </select>
+                <small style="color: #666; font-size: 0.78rem; display: block; margin-top: 8px; line-height: 1.4;">
+                    💡 提示：如果配置了退选课程，当检测到候补课程有余量（Selected &lt; Capacity）且开放选择时，系统会<b>先发送退选包</b>，随后<b>立刻发送该候补课程的选择包</b>。如果退选课程留空，则在有余量时直接抢课。
+                </small>
+            </div>
+            
+            <div style="display: flex; gap: 12px; justify-content: flex-end; border-top: 1px solid #222; padding-top: 15px;">
+                <button class="btn" onclick="closeWaitlistModal()" style="border-color: #555; color: #aaa; background: transparent; padding: 6px 16px;">取消</button>
+                <button class="btn btn-primary" id="wl-confirm-btn" style="background: var(--success); border-color: var(--success); color: #000; padding: 6px 20px; font-weight: bold;">确认加入候补</button>
+            </div>
+        </div>
+    </div>
+
     <script>
         const terminal = document.getElementById('terminal');
         let isLoggedIn = false;
@@ -734,28 +763,91 @@
             }
         }
 
-        async function toggleWaitlist(id) {
+        let activeWlId = null;
+        
+        function openWaitlistModal(id) {
             const course = allCourses.find(c => c.id === id);
             if (!course) return;
+            activeWlId = id;
+            
+            document.getElementById("wl-target-course-name").textContent = `[${course.id}] ${course.name}`;
+            
+            const select = document.getElementById("wl-drop-course-select");
+            select.innerHTML = '<option value="">-- 不退课，有容量直接抢 --</option>';
+            
+            const grabbedCourses = allCourses.filter(c => grabbedCourseIds.has(c.id));
+            grabbedCourses.forEach(c => {
+                const opt = document.createElement("option");
+                opt.value = c.id;
+                opt.textContent = `[退选] ${c.name} (${c.teacher})`;
+                select.appendChild(opt);
+            });
+            
+            document.getElementById("waitlist-modal").style.display = "flex";
+        }
+        
+        function closeWaitlistModal() {
+            document.getElementById("waitlist-modal").style.display = "none";
+            activeWlId = null;
+        }
+        
+        async function confirmWaitlist() {
+            if (!activeWlId) return;
+            const course = allCourses.find(c => c.id === activeWlId);
+            if (!course) return;
+            
+            const dropId = document.getElementById("wl-drop-course-select").value;
+            const dropCourseObj = dropId ? allCourses.find(c => c.id === dropId) : null;
+            
             try {
                 const res = await fetch('/api/waitlist/toggle', {
                     method: 'POST',
                     headers: { 'Content-Type': 'application/json' },
-                    body: JSON.stringify({ course: course })
+                    body: JSON.stringify({
+                        course: course,
+                        dropId: dropId || null,
+                        dropCourse: dropCourseObj,
+                        action: 'add'
+                    })
                 });
                 const data = await res.json();
                 if (data.success) {
-                    if (data.status === 'added') {
-                        waitlistCourseIds.add(id);
-                    } else {
-                        waitlistCourseIds.delete(id);
-                    }
+                    waitlistCourseIds.add(activeWlId);
                     renderCourses();
+                    closeWaitlistModal();
+                    logToTerminal(new Date().toLocaleTimeString(), `成功将课程 [${course.name}] 加入候补队列！${dropId ? '（关联退选: ' + dropCourseObj.name + '）' : ''}`, "success");
                 } else {
                     alert("操作失败: " + data.msg);
                 }
-            } catch (e) {
-                console.error("候补切换失败", e);
+            } catch(e) {
+                console.error("确认候补失败", e);
+            }
+        }
+        
+        document.getElementById("wl-confirm-btn").onclick = confirmWaitlist;
+
+        async function toggleWaitlist(id) {
+            const isWaitlisted = waitlistCourseIds.has(id);
+            if (isWaitlisted) {
+                try {
+                    const res = await fetch('/api/waitlist/toggle', {
+                        method: 'POST',
+                        headers: { 'Content-Type': 'application/json' },
+                        body: JSON.stringify({ id: id, action: 'remove' })
+                    });
+                    const data = await res.json();
+                    if (data.success) {
+                        waitlistCourseIds.delete(id);
+                        renderCourses();
+                        logToTerminal(new Date().toLocaleTimeString(), `已取消该课程的候补轮询。`, "warn");
+                    } else {
+                        alert("操作失败: " + data.msg);
+                    }
+                } catch (e) {
+                    console.error("候补取消失败", e);
+                }
+            } else {
+                openWaitlistModal(id);
             }
         }
 
